@@ -44,16 +44,7 @@ function matmul_testing(a, b, c, d,
     # (2) Load a compute_warp.M x compute_warp.N tile of C from shared memory into registers
     warp_tile = subdivide(block_tile.MN, Tile(conf.compute_warp).MN, warpId, conf.warps_per_block)
 
-
     c_frags = LocalArray{Tuple{num_fragments_m, num_fragments_n}, Operator.fragtype_accum(conf.operator, conf.shared_c_layout)}(undef)
-
-    try
-        c_frags = setindex(c_frags, Float32(0.0), 1, 1)
-    catch err
-        code_typed(err, interactive=true)
-    end
-
-    return
 
     @unroll for i = 1 : num_fragments_m
         @unroll for j = 1 : num_fragments_n
@@ -62,27 +53,25 @@ function matmul_testing(a, b, c, d,
         end
     end
 
+    sync_threads()
 
     # (4) Store the compute_warp.M x compute_warp.N tile of D from registers to shared memory
-    # shmem_d = CuDynamicSharedArray(Layout.eltype(conf.shared_d_layout), Layout.physical_size(conf.shared_d_layout, block_tile.MN.size))
+    shmem_d = CuDynamicSharedArray(Layout.eltype(conf.shared_d_layout), Layout.physical_size(conf.shared_d_layout, block_tile.MN.size))
 
-    # warp_tile = subdivide(block_tile.MN, Tile(conf.compute_warp).MN, warpId, conf.warps_per_block)
+    warp_tile = subdivide(block_tile.MN, Tile(conf.compute_warp).MN, warpId, conf.warps_per_block)
 
-    # @unroll for i = 1 : num_fragments_m
-    #     @unroll for j = 1 : num_fragments_n
-    #         tile = translate_offset(warp_tile, (M = (i-1)*conf.compute_op_shape.M, N = (j-1)*conf.compute_op_shape.N))
+    @unroll for i = 1 : num_fragments_m
+        @unroll for j = 1 : num_fragments_n
+            tile = translate_offset(warp_tile, (M = (i-1)*conf.compute_op_shape.M, N = (j-1)*conf.compute_op_shape.N))
 
-    #         @inbounds Operator.store_d(conf.operator, conf.shared_d_layout, shmem_d, transf_rf2sh_d(c_frags[i, j], tile), tile)
+            @inbounds Operator.store_d(conf.operator, conf.shared_d_layout, shmem_d, transf_rf2sh_d(c_frags[i, j], tile), tile)
+        end
+    end
 
-    #     end
-    # end
+    sync_threads()
 
-    # sync_threads()
-
-    # # (5) Run the epilogue
-    # epilogue(d, shmem_d, transf_sh2gl_d, conf)
-
-    return
+    # (5) Run the epilogue
+    epilogue(d, shmem_d, transf_sh2gl_d, conf)
 end
 
 function matmul_singlestage(a, b, c, d,

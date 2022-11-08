@@ -60,18 +60,19 @@ for (layout_type, convert_index_func) in [
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
 
-            return workspace[y, x]
+            @inbounds return workspace[y, x]
         end
 
-        # @inline function store_d(::Type{WMMAOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, frag, tile::Tile) where {M, N, K, T}
-        #     conf = WMMA.Config{M, N, K, T}
+        @inline function store_d(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, frag, tile::Tile) where {M, N, K, T}
+            laneId = (threadIdx().x - 1) % 32 + 1
 
-        #     linear_base = linearise($convert_index_func(tile.base), size(workspace))
-        #     linear_offset = linearise($convert_index_func(tile.offset), size(workspace))
+            op_y = (laneId - 1) ÷ N + 1
+            op_x = (laneId - 1) % N + 1
 
-        #     ptr = pointer(workspace, linear_base) + (linear_offset - 1) * sizeof(T)
-        #     WMMA.store_d(ptr, frag, size(workspace, 1), $wmma_layout_type, conf)
-        # end
+            y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
+
+            @inbounds workspace[y, x] = frag
+        end
     end
 end
 

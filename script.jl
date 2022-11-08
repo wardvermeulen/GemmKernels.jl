@@ -14,6 +14,9 @@ function main()
     min_dimension = 128
 
     @testset "(M = $M, N = $N, K = $K)" for (M, N, K) in vcat(min_dimension.*[[1,1,1]] )
+        M = min_dimension
+        N = min_dimension
+        K = min_dimension
         alpha = convert(A_type, 2)
         beta  = convert(CD_type, 3)
 
@@ -32,8 +35,9 @@ function main()
 
         conf = GemmKernels.get_config(
                                         gemm_shape = (M = M, N = N, K = K),
-                                        # operator = Operator.WMMAOp{16, 16, 16, CD_type},
-                                        operator = Operator.FPUOp{4, 8, 16, CD_type},
+                                        block_shape = (M = 128, N = 64, K = 64),
+                                        operator = Operator.FPUOp{4, 8, 1, CD_type},
+                                        compute_warp = (M = 32, N = 32, K = 1),
                                         global_a_layout = transpose_a ? Layout.AlignedRowMajor{A_type} : Layout.AlignedColMajor{A_type},
                                         global_b_layout = transpose_b ? Layout.AlignedRowMajor{B_type} : Layout.AlignedColMajor{B_type},
 
@@ -54,7 +58,7 @@ function main()
         new_a_h = transpose_a ? transpose(a_h) : a_h
         new_b_h = transpose_b ? transpose(b_h) : b_h
 
-        @test all(isapprox.(beta * c_h, Array(d); rtol = sqrt(eps(A_type))))
+        @test all(isapprox.(beta * c_h, Array(d); rtol = sqrt(eps(Float32))))
         # @test all(isapprox.(alpha * CD_type.(new_a_h) * CD_type.(new_b_h) + beta * c_h, Array(d); rtol = sqrt(eps(A_type))))
     end
 end
