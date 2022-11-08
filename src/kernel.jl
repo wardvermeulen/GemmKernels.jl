@@ -8,6 +8,83 @@ using GemmKernels: LocalArray
 using KernelAbstractions.Extras: @unroll
 using Base: setindex
 
+function matmul_testing(a, b, c, d,
+                        transf_gl2sh_a, transf_gl2sh_b, transf_gl2sh_c, transf_sh2gl_d,
+                        transf_sh2rf_a, transf_sh2rf_b, transf_sh2rf_c, transf_rf2sh_d,
+                        epilogue,
+                        ::Type{conf}) where {conf <: GemmKernels.Config}
+
+    # Calculate the number of fragments needed to fully cover a warp tile
+    num_fragments_m = conf.compute_warp.M ÷ conf.compute_op_shape.M
+    num_fragments_n = conf.compute_warp.N ÷ conf.compute_op_shape.N
+
+    # Constants
+    block_i = (blockIdx().x - 1) * conf.block_shape.M
+    block_j = (blockIdx().y - 1) * conf.block_shape.N
+
+    warpId = (threadIdx().x - 1) ÷ 32 + 1
+    laneId = (threadIdx().x - 1) % 32 + 1
+
+    gemm_sz = Tile(conf.matmul_shape)
+    block_tile = Tile(conf.block_shape)
+
+    # (1) Cooperatively load a block_shape.M x block_shape.N tile of C from global to shared memory within one threadblock
+    shmem_c = CuDynamicSharedArray(Layout.eltype(conf.shared_c_layout), Layout.physical_size(conf.shared_c_layout, block_tile.MN.size))
+
+    @unroll for warp_tile = parallellise(block_tile.MN, Tile(conf.mem_cd_warp), warpId, conf.warps_per_block)
+        @unroll for thread_tile = parallellise(warp_tile, Tile(conf.mem_cd_thread), laneId, 32)
+            x = Layout.load(conf.global_c_layout, c, translate_base(thread_tile, (M = block_i, N = block_j)))
+            x = transf_gl2sh_c(x, thread_tile)
+            Layout.store!(conf.shared_c_layout, shmem_c, x, thread_tile)
+        end
+    end
+
+    sync_threads()
+
+    # (2) Load a compute_warp.M x compute_warp.N tile of C from shared memory into registers
+    warp_tile = subdivide(block_tile.MN, Tile(conf.compute_warp).MN, warpId, conf.warps_per_block)
+
+
+    c_frags = LocalArray{Tuple{num_fragments_m, num_fragments_n}, Operator.fragtype_accum(conf.operator, conf.shared_c_layout)}(undef)
+
+    try
+        c_frags = setindex(c_frags, Float32(0.0), 1, 1)
+    catch err
+        code_typed(err, interactive=true)
+    end
+
+    return
+
+    @unroll for i = 1 : num_fragments_m
+        @unroll for j = 1 : num_fragments_n
+            tile = translate_offset(warp_tile, (M = (i-1)*conf.compute_op_shape.M, N = (j-1)*conf.compute_op_shape.N))
+            c_frags = setindex(c_frags, transf_sh2rf_c(Operator.load_c(conf.operator, conf.shared_c_layout, shmem_c, tile), tile), i ,j)
+        end
+    end
+
+
+    # (4) Store the compute_warp.M x compute_warp.N tile of D from registers to shared memory
+    # shmem_d = CuDynamicSharedArray(Layout.eltype(conf.shared_d_layout), Layout.physical_size(conf.shared_d_layout, block_tile.MN.size))
+
+    # warp_tile = subdivide(block_tile.MN, Tile(conf.compute_warp).MN, warpId, conf.warps_per_block)
+
+    # @unroll for i = 1 : num_fragments_m
+    #     @unroll for j = 1 : num_fragments_n
+    #         tile = translate_offset(warp_tile, (M = (i-1)*conf.compute_op_shape.M, N = (j-1)*conf.compute_op_shape.N))
+
+    #         @inbounds Operator.store_d(conf.operator, conf.shared_d_layout, shmem_d, transf_rf2sh_d(c_frags[i, j], tile), tile)
+
+    #     end
+    # end
+
+    # sync_threads()
+
+    # # (5) Run the epilogue
+    # epilogue(d, shmem_d, transf_sh2gl_d, conf)
+
+    return
+end
+
 function matmul_singlestage(a, b, c, d,
                           transf_gl2sh_a, transf_gl2sh_b, transf_gl2sh_c, transf_sh2gl_d,
                           transf_sh2rf_a, transf_sh2rf_b, transf_sh2rf_c, transf_rf2sh_d,
