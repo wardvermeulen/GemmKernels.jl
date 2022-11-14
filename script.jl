@@ -35,9 +35,9 @@ function main()
 
         conf = GemmKernels.get_config(
                                         gemm_shape = (M = M, N = N, K = K),
-                                        block_shape = (M = 128, N = 64, K = 64),
-                                        operator = Operator.FPUOp{4, 8, 1, CD_type},
-                                        compute_warp = (M = 32, N = 32, K = 1),
+                                        block_shape = (M = 64, N = 64, K = 64),
+                                        operator = Operator.FPUOp{4, 8, 8, CD_type},
+                                        compute_warp = (M = 16, N = 32, K = 8),
                                         global_a_layout = transpose_a ? Layout.AlignedRowMajor{A_type} : Layout.AlignedColMajor{A_type},
                                         global_b_layout = transpose_b ? Layout.AlignedRowMajor{B_type} : Layout.AlignedColMajor{B_type},
 

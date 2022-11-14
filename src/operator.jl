@@ -24,39 +24,49 @@ struct FPUOp{M, N, K, T} end
 
 # TODO: add RowMajor
 for (layout_type, convert_index_func) in [
-                                        (Layout.AlignedColMajor, identity)
+                                        (Layout.AlignedColMajor, identity),
+                                        (Layout.AlignedRowMajor, x -> reverse(Tuple(x)))
                                        ]
     @eval begin
-        # @inline fragtype_a(::Type{WMMAOp{16, 16, 16, T}}, ::Type{$layout_type{Float16}}) where {T} = T
-        # @inline fragtype_b(::Type{WMMAOp{16, 16, 16, T}}, ::Type{$layout_type{Float16}}) where {T} = T
+        @inline fragtype_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}) where {M, N, K, T} = Float16
+        @inline fragtype_b(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}) where {M, N, K, T} = Float16
         @inline fragtype_accum(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}) where {M, N, K, T} = T
 
-        # @inline function load_a(::Type{WMMAOp{M, N, K, T}}, ::Type{$layout_type{Float16}}, workspace, tile::Tile) where {M, N, K, T}
-        #     conf = WMMA.Config{M, N, K, T}
+        @inline function load_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}, workspace, tile::Tile) where {M, N, K, T}
+            # check size of MK, if smaller than 32, let threads above the value of that product load nothing
+            # these are, useless operations, do something about it
+            laneId = (threadIdx().x - 1) % 32 + 1
 
-        #     linear_base = linearise($convert_index_func(tile.base), size(workspace))
-        #     linear_offset = linearise($convert_index_func(tile.offset), size(workspace))
+            op_y = (laneId - 1) ÷ K + 1
+            op_x = (laneId - 1) % K + 1
 
-        #     ptr = pointer(workspace, linear_base) + (linear_offset - 1) * sizeof(Float16)
-        #     return WMMA.load_a(ptr, size(workspace, 1), $wmma_layout_type, conf)
-        # end
+            y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.K + tile.offset.K + op_x))
 
-        # @inline function load_b(::Type{WMMAOp{M, N, K, T}}, ::Type{$layout_type{Float16}}, workspace, tile::Tile) where {M, N, K, T}
-        #     conf = WMMA.Config{M, N, K, T}
+            @inbounds return workspace[y, x]
+        end
 
-        #     linear_base = linearise($convert_index_func(tile.base), size(workspace))
-        #     linear_offset = linearise($convert_index_func(tile.offset), size(workspace))
+        @inline function load_b(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}, workspace, tile::Tile) where {M, N, K, T}
+            laneId = (threadIdx().x - 1) % 32 + 1
 
-        #     ptr = pointer(workspace, linear_base) + (linear_offset - 1) * sizeof(Float16)
-        #     return WMMA.load_b(ptr, size(workspace, 1), $wmma_layout_type, conf)
-        # end
+            op_y = (laneId - 1) ÷ 4 + 1
+            op_x = (laneId - 1) % 4 + 1
+
+            y, x = $convert_index_func((tile.base.K + tile.offset.K + op_y, tile.base.N + tile.offset.N + op_x))
+
+            @inbounds return workspace[y, x]
+        end
 
         @inline function load_c(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, tile::Tile) where {M, N, K, T}
             # ! compute_op_shape.MN must have a size of 32
+            # well not necessarily, but it should, for maximum performance
             laneId = (threadIdx().x - 1) % 32 + 1
 
             op_y = (laneId - 1) ÷ N + 1
             op_x = (laneId - 1) % N + 1
+
+            # if threadIdx().x == 9 && blockIdx().x == 1 && blockIdx().y == 1
+            #     @cushow op_y, op_x
+            # end
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
 
