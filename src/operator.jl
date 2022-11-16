@@ -22,7 +22,6 @@ struct FPUOp{M, N, K, T} end
 
 @inline shape(::Type{FPUOp{M, N, K, T}}) where {M, N, K, T} = (M = M, N = N, K = K)
 
-# TODO: add RowMajor
 for (layout_type, convert_index_func) in [
                                         (Layout.AlignedColMajor, identity),
                                         (Layout.AlignedRowMajor, x -> reverse(Tuple(x)))
@@ -69,18 +68,7 @@ for (layout_type, convert_index_func) in [
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
 
-            @inbounds workspace[y, x] += frag
-        end
-
-        @inline function zero_d(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, frag, tile::Tile) where {M, N, K, T}
-            laneId = (threadIdx().x - 1) % 32 + 1
-
-            op_y = (laneId - 1) ÷ N + 1
-            op_x = (laneId - 1) % N + 1
-
-            y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
-
-            @inbounds workspace[y, x] = 0.0
+            @inbounds workspace[y, x] = frag
         end
     end
 end

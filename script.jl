@@ -36,7 +36,7 @@ function main()
 
             conf = GemmKernels.get_config(
                                             gemm_shape = (M = M, N = N, K = K),
-                                            # TODO: Does not work with N = 64, investigate.
+                                            # TODO: Does not work with N = 128, investigate.
                                             block_shape = (M = 128, N = 64, K = 64),
                                             operator = Operator.FPUOp{OP_M, OP_N, 1, CD_type},
                                             global_a_layout = transpose_a ? Layout.AlignedRowMajor{A_type} : Layout.AlignedColMajor{A_type},
@@ -52,7 +52,7 @@ function main()
             GemmKernels.matmul(a, b, c, d, conf;
                                 transform_shared_to_regs_a = Transform.Elementwise(x -> x * alpha),
                                 transform_shared_to_regs_c = Transform.Elementwise(x -> x * beta),
-                                kernel = Kernel.matmul_testing
+                                kernel = Kernel.matmul_pipelined
                                 )
 
             # Transpose outputs, if necessary
