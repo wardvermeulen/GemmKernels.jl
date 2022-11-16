@@ -51,16 +51,10 @@ for (layout_type, convert_index_func) in [
         end
 
         @inline function load_c(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, tile::Tile) where {M, N, K, T}
-            # ! compute_op_shape.MN must have a size of 32
-            # well not necessarily, but it should, for maximum performance
             laneId = (threadIdx().x - 1) % 32 + 1
 
             op_y = (laneId - 1) ÷ N + 1
             op_x = (laneId - 1) % N + 1
-
-            # if threadIdx().x == 9 && blockIdx().x == 1 && blockIdx().y == 1
-            #     @cushow op_y, op_x
-            # end
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
 
@@ -74,11 +68,6 @@ for (layout_type, convert_index_func) in [
             op_x = (laneId - 1) % N + 1
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
-
-            # if threadIdx().x == 1
-            #     @cushow workspace[y, x]
-            #     @cushow frag
-            # end
 
             @inbounds workspace[y, x] += frag
         end

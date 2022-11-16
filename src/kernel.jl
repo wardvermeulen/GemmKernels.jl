@@ -49,10 +49,6 @@ function matmul_testing(a, b, c, d,
     @unroll for i = 1 : num_fragments_m
         @unroll for j = 1 : num_fragments_n
             tile = translate_offset(warp_tile, (M = (i-1)*conf.compute_op_shape.M, N = (j-1)*conf.compute_op_shape.N))
-            # if threadIdx().x == 1 && block_i == 0 && block_j == 0 && i == 1 
-            #     @cushow Tuple(tile.offset)
-            #     @cushow Tuple(tile.size)
-            # end
             c_frags = setindex(c_frags, transf_sh2rf_c(Operator.load_c(conf.operator, conf.shared_c_layout, shmem_c, tile), tile), i ,j)
         end
     end
@@ -88,23 +84,11 @@ function matmul_testing(a, b, c, d,
 
             # (3.3) Calculate a compute_warp.M x compute_warp.N tile of D, using a compute_warp.M x compute_warp.N x compute_warp.K operation
             @unroll for (k, warp_tile) = enumerate(parallellise(block_tile, Tile(conf.compute_warp), warpId, conf.warps_per_block))
-                # if threadIdx().x == 1 && block_i == 0 && block_j == 0 && block_k == 0
-                    # @cushow Tuple(a_tile.offset)
-                    # @cushow Tuple(a_tile.size)
-                    # @cushow k
-                # end
-
                 # (3.3.1) Load a compute_warp.M x compute_warp.K tile of A from shared memory into registers
                 a_frags = LocalArray{Tuple{num_fragments_m}, Operator.fragtype_a(conf.operator, conf.shared_a_layout)}(undef)
 
                 @unroll for i = 1 : num_fragments_m
                     a_tile = translate_offset(warp_tile.MK, (M = (i-1)*conf.compute_op_shape.M, K = 0))
-
-                    # if threadIdx().x == 1 && block_i == 0 && block_j == 0 && block_k == 0 && k == 1
-                    #     @cushow Tuple(a_tile.offset)
-                    #     @cushow Tuple(a_tile.size)
-                    # end
-
                     @inbounds a_frags = setindex(a_frags, transf_sh2rf_a(Operator.load_a(conf.operator, conf.shared_a_layout, shmem_a, a_tile), a_tile), i)
                 end
 
@@ -113,20 +97,12 @@ function matmul_testing(a, b, c, d,
 
                 @unroll for j = 1 : num_fragments_n
                     b_tile = translate_offset(warp_tile.KN, (K = 0, N = (j-1)*conf.compute_op_shape.N))
-                    
-                    # if threadIdx().x == 1 && block_i == 0 && block_j == 0 && block_k == 0 && k == 8
-                    #     @cushow Tuple(b_tile.offset)
-                    #     @cushow Tuple(b_tile.size)
-                    # end
-                    
                     @inbounds b_frags = setindex(b_frags, transf_sh2rf_b(Operator.load_b(conf.operator, conf.shared_b_layout, shmem_b, b_tile), b_tile), j)
                 end
 
                 # (3.3.3) Compute a compute_warp.M x compute_warp.N x compute_warp.K matrix product within one warp
                 @unroll for i = 1 : num_fragments_m
                     @unroll for j = 1 : num_fragments_n
-                        # @cushow Float32(a_frags[i])
-                        # @cushow Float32(b_frags[j])
                         @inbounds c_frags = setindex(c_frags, Operator.mma(conf.operator, a_frags[i], b_frags[j], c_frags[i, j]), i, j)
                     end
                 end
