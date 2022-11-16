@@ -33,14 +33,10 @@ for (layout_type, convert_index_func) in [
         @inline fragtype_accum(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}) where {M, N, K, T} = T
 
         @inline function load_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}, workspace, tile::Tile) where {M, N, K, T}
-            # check size of MK, if smaller than 32, let threads above the value of that product load nothing
-            # these are, useless operations, do something about it
             laneId = (threadIdx().x - 1) % 32 + 1
 
-            op_y = (laneId - 1) ÷ K + 1
-            op_x = (laneId - 1) % K + 1
-
-            y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.K + tile.offset.K + op_x))
+            op_y = (laneId - 1) ÷ N + 1
+            y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.K + tile.offset.K + 1))
 
             @inbounds return workspace[y, x]
         end
@@ -48,10 +44,8 @@ for (layout_type, convert_index_func) in [
         @inline function load_b(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}, workspace, tile::Tile) where {M, N, K, T}
             laneId = (threadIdx().x - 1) % 32 + 1
 
-            op_y = (laneId - 1) ÷ 4 + 1
-            op_x = (laneId - 1) % 4 + 1
-
-            y, x = $convert_index_func((tile.base.K + tile.offset.K + op_y, tile.base.N + tile.offset.N + op_x))
+            op_x = (laneId - 1) % N + 1
+            y, x = $convert_index_func((tile.base.K + tile.offset.K + 1, tile.base.N + tile.offset.N + op_x))
 
             @inbounds return workspace[y, x]
         end
@@ -81,9 +75,29 @@ for (layout_type, convert_index_func) in [
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
 
-            @inbounds workspace[y, x] = frag
+            # if threadIdx().x == 1
+            #     @cushow workspace[y, x]
+            #     @cushow frag
+            # end
+
+            @inbounds workspace[y, x] += frag
+        end
+
+        @inline function zero_d(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, frag, tile::Tile) where {M, N, K, T}
+            laneId = (threadIdx().x - 1) % 32 + 1
+
+            op_y = (laneId - 1) ÷ N + 1
+            op_x = (laneId - 1) % N + 1
+
+            y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
+
+            @inbounds workspace[y, x] = 0.0
         end
     end
+end
+
+function mma(::Type{FPUOp{M, N, K, T}}, a_frag, b_frag, c_frag) where {M, N, K, T}
+    @inbounds return c_frag + a_frag * b_frag 
 end
 
 # ----
