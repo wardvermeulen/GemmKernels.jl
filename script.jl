@@ -6,16 +6,18 @@ using Test
 
 
 function main()
-    transpose_a = true
-    transpose_b = false
-    A_type = Float16
-    B_type = Float16
-    CD_type = Float16
-    min_dimension = 128
+    # transpose_a = false
+    # transpose_b = false
+    # A_type = Float16
+    # B_type = Float16
+    # CD_type = Float16
+    # min_dimension = 256
+    # OP_M = 4
+    # OP_N = 8
 
     @testset "FPU GEMM $(A_type)*$(B_type)+$(CD_type)=$(CD_type) ($( !transpose_a ? 'N' : 'T' )$( !transpose_b ? 'N' : 'T' )) OP ($(OP_M), $(OP_N), 1)" for transpose_a = [false, true], 
         transpose_b = [false, true], 
-        (A_type, B_type, CD_type, min_dimension) in [(Float16, Float16, Float32, 128)],
+        (A_type, B_type, CD_type, min_dimension) in [(Float16, Float16, Float32, 128), (Float16, Float16, Float16, 256)],
         (OP_M, OP_N) in [(4, 8), (8, 4)]
         @testset "(M = $M, N = $N, K = $K)" for (M, N, K) in vcat(min_dimension.*[[1,1,1], [2,2,1], [1,1,2], [2,2,2]], [[2048, 2048, 2048]])
             alpha = convert(A_type, 2)

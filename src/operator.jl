@@ -29,7 +29,13 @@ for (layout_type, convert_index_func) in [
     @eval begin
         @inline fragtype_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}) where {M, N, K, T} = Float16
         @inline fragtype_b(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}) where {M, N, K, T} = Float16
-        @inline fragtype_accum(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}) where {M, N, K, T} = T
+        @inline function fragtype_accum(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}) where {M, N, K, T}
+            if T == Float16
+                return NTuple{2, Float16}
+            else
+                return T
+            end
+        end
 
         @inline function load_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}, workspace, tile::Tile) where {M, N, K, T}
             laneId = (threadIdx().x - 1) % 32 + 1
@@ -57,7 +63,11 @@ for (layout_type, convert_index_func) in [
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
 
-            @inbounds return workspace[y, x]
+            if T == Float16
+                @inbounds return (workspace[y, x], Float16(0.0))
+            else
+                @inbounds return workspace[y, x]
+            end
         end
 
         @inline function store_d(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, frag, tile::Tile) where {M, N, K, T}
@@ -68,13 +78,26 @@ for (layout_type, convert_index_func) in [
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
 
-            @inbounds workspace[y, x] = frag
+            if T == Float16
+                @inbounds workspace[y, x] = frag[1]
+            else
+                @inbounds workspace[y, x] = frag
+            end
         end
     end
 end
 
 function mma(::Type{FPUOp{M, N, K, T}}, a_frag, b_frag, c_frag) where {M, N, K, T}
-    @inbounds return c_frag + a_frag * b_frag 
+    if T == Float16
+        # https://en.wikipedia.org/wiki/Kahan_summation_algorithm
+        y = a_frag * b_frag - c_frag[2]
+        t = c_frag[1] + y
+        c = (t - c_frag[1]) - y
+    
+        @inbounds return (t, c) 
+    else
+        @inbounds return c_frag + a_frag * b_frag 
+    end
 end
 
 # ----
