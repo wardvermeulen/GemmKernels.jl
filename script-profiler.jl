@@ -1,5 +1,5 @@
-using NVTX
 using CUDA
+using NVTX
 using ForwardDiff
 using GemmKernels
 using LinearAlgebra
@@ -121,10 +121,14 @@ function profiler_main()
     benchmark_fpu()
 
     CUDA.@profile begin
-        NVTX.@mark "FPU 1" benchmark_fpu()
-        NVTX.@mark "FPU 2" benchmark_fpu()
+        NVTX.@mark "FPU 1" 
+        benchmark_fpu()
+        NVTX.@mark "FPU 2" 
+        benchmark_fpu()
 
-        NVTX.@mark "WMMA 1" benchmark_wmma()
-        NVTX.@mark "WMMA 2" benchmark_wmma()
+        NVTX.@mark "WMMA 1" 
+        benchmark_wmma()
+        NVTX.@mark "WMMA 2" 
+        benchmark_wmma()
     end
 end
