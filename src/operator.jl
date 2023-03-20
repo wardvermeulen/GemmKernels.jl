@@ -112,12 +112,12 @@ for (layout_type, convert_index_func) in [
 end
 
 function mma(::Type{FPUOp{M, N, K, T}}, a_frag, b_frag, c_frag) where {M, N, K, T}
-    @unroll for m = 1 : M ÷ 4
-        @unroll for n = 1 : N ÷ 8 
-            @unroll for k = 1 : K
+    @unroll for k = 1 : K
+        @unroll for m = 1 : M ÷ 4
+            @unroll for n = 1 : N ÷ 8 
                 @inbounds c_frag = setindex(
                     c_frag,
-                    T(c_frag[m + (M ÷ 4) * (n - 1)] + a_frag[m + (M ÷ 4) * (k - 1)] * b_frag[n + (N ÷ 8) * (k - 1)]),
+                    T(fma(a_frag[m + (M ÷ 4) * (k - 1)], b_frag[n + (N ÷ 8) * (k - 1)], c_frag[m + (M ÷ 4) * (n - 1)])),
                     m + (M ÷ 4) * (n - 1)
                 )
             end
