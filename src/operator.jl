@@ -4,6 +4,9 @@ module Operator
 using CUDA
 using GemmKernels
 using GemmKernels.Tiling
+using GemmKernels: LocalArray
+using KernelAbstractions.Extras: @unroll
+using Base: setindex
 
 # -------------------------------------
 # Default definition for padded layouts
@@ -29,75 +32,98 @@ for (layout_type, convert_index_func) in [
     @eval begin
         @inline fragtype_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}) where {M, N, K, T} = Float16
         @inline fragtype_b(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}) where {M, N, K, T} = Float16
+
+        # ? Maybe the other way around is more efficient? 
+        @inline fragtype_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}) where {M, N, K, T} = NTuple{M * K ÷ 4, T}
+        @inline fragtype_b(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}) where {M, N, K, T} = NTuple{K * N ÷ 8, T}
+
         @inline function fragtype_accum(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}) where {M, N, K, T}
-            if T == Float16
-                return NTuple{2, Float16}
-            else
-                return T
-            end
+            return NTuple{M * K * N ÷ 32, T}
         end
 
-        @inline function load_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}, workspace, tile::Tile) where {M, N, K, T}
+        @inline function load_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, tile::Tile) where {M, N, K, T}
             laneId = (threadIdx().x - 1) % 32 + 1
 
-            op_y = (laneId - 1) ÷ N + 1
+            op_y = (laneId - 1) ÷ 8 + 1
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.K + tile.offset.K + 1))
 
-            @inbounds return workspace[y, x]
+            frag = LocalArray{Tuple{M * K ÷ 4}, T}(undef)
+            @unroll for m = 1 : M ÷ 4
+                @unroll for k = 1 : K
+                    @inbounds frag = setindex(frag, T(workspace[y + 4 * (m - 1), x + (k - 1)]), m + (M ÷ 4) * (k - 1))
+                end
+            end
+            
+            return NTuple{M * K ÷ 4, T}(frag)
         end
 
-        @inline function load_b(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{Float16}}, workspace, tile::Tile) where {M, N, K, T}
+        @inline function load_b(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, tile::Tile) where {M, N, K, T}
             laneId = (threadIdx().x - 1) % 32 + 1
 
-            op_x = (laneId - 1) % N + 1
+            op_x = (laneId - 1) % 8 + 1
             y, x = $convert_index_func((tile.base.K + tile.offset.K + 1, tile.base.N + tile.offset.N + op_x))
 
-            @inbounds return workspace[y, x]
+            frag = LocalArray{Tuple{K * N ÷ 8}, T}(undef)
+            @unroll for n = 1 : N ÷ 8
+                @unroll for k = 1 : K
+                    @inbounds frag = setindex(frag, T(workspace[y + (k - 1), x + 8 * (n - 1)]), n + (N ÷ 8) * (k - 1))
+                end
+            end
+
+            return NTuple{K * N ÷ 8, T}(frag)
         end
 
         @inline function load_c(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, tile::Tile) where {M, N, K, T}
             laneId = (threadIdx().x - 1) % 32 + 1
 
-            op_y = (laneId - 1) ÷ N + 1
-            op_x = (laneId - 1) % N + 1
+            op_y = (laneId - 1) ÷ 8 + 1
+            op_x = (laneId - 1) % 8 + 1
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
 
-            if T == Float16
-                @inbounds return (workspace[y, x], Float16(0.0))
-            else
-                @inbounds return workspace[y, x]
+            frag = LocalArray{Tuple{M * K * N ÷ 32}, T}(undef)
+            @unroll for m = 1 : M ÷ 4
+                @unroll for n = 1 : N ÷ 8 
+                    # if (threadIdx().x == 1 && y == 1 && x == 1)
+                    #     @cushow i + (M * K ÷ 4) * (j - 1)
+                    # end
+                    @inbounds frag = setindex(frag, T(workspace[y + 4 * (m - 1), x + 8 * (n - 1)]), m + (M ÷ 4) * (n - 1))
+                end
             end
+
+            return NTuple{M * K * N ÷ 32, T}(frag)
         end
 
         @inline function store_d(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}, workspace, frag, tile::Tile) where {M, N, K, T}
             laneId = (threadIdx().x - 1) % 32 + 1
 
-            op_y = (laneId - 1) ÷ N + 1
-            op_x = (laneId - 1) % N + 1
+            op_y = (laneId - 1) ÷ 8 + 1
+            op_x = (laneId - 1) % 8 + 1
 
             y, x = $convert_index_func((tile.base.M + tile.offset.M + op_y, tile.base.N + tile.offset.N + op_x))
 
-            if T == Float16
-                @inbounds workspace[y, x] = frag[1]
-            else
-                @inbounds workspace[y, x] = frag
+            @unroll for m = 1 : M ÷ 4
+                @unroll for n = 1 : N ÷ 8 
+                    @inbounds workspace[y + 4 * (m - 1), x + 8 * (n - 1)] = frag[m + (M ÷ 4) * (n - 1)]
+                end
             end
         end
     end
 end
 
 function mma(::Type{FPUOp{M, N, K, T}}, a_frag, b_frag, c_frag) where {M, N, K, T}
-    if T == Float16
-        # https://en.wikipedia.org/wiki/Kahan_summation_algorithm
-        y = a_frag * b_frag - c_frag[2]
-        t = c_frag[1] + y
-        c = (t - c_frag[1]) - y
-    
-        @inbounds return (t, c) 
-    else
-        @inbounds return c_frag + a_frag * b_frag 
+    @unroll for m = 1 : M ÷ 4
+        @unroll for n = 1 : N ÷ 8 
+            @unroll for k = 1 : K
+                @inbounds c_frag = setindex(
+                    c_frag,
+                    T(c_frag[m + (M ÷ 4) * (n - 1)] + a_frag[m + (M ÷ 4) * (k - 1)] * b_frag[n + (N ÷ 8) * (k - 1)]),
+                    m + (M ÷ 4) * (n - 1)
+                )
+            end
+        end
     end
+    return c_frag
 end
 
 # ----
