@@ -1,19 +1,23 @@
 using CUDA
-using NVTX
 using ForwardDiff
 using GemmKernels
 using LinearAlgebra
+using NVTX
+using Test
+
+CUDA.CUBLAS.cublasSetMathMode(CUBLAS.handle(), CUBLAS.CUBLAS_DEFAULT_MATH)
+
+transpose_a = false
+transpose_b = false
+
+A_type = Float32
+B_type = Float32
+CD_type = Float32
+
+(M, N, K) = 256 .* [1, 1, 1]
 
 function benchmark_fpu()
-    transpose_a = false
-    transpose_b = false
-    A_type = Float16
-    B_type = Float16
-    CD_type = Float16
-    min_dimension = 2048
-    OP_M = 4
-    OP_N = 8
-    (M, N, K) = min_dimension .*[1, 1, 1]
+    operator = Operator.FPUOp{8, 8, 1, CD_type}
 
     alpha = convert(A_type, 2)
     beta  = convert(CD_type, 3)
@@ -33,9 +37,8 @@ function benchmark_fpu()
 
     conf = GemmKernels.get_config(
                                     gemm_shape = (M = M, N = N, K = K),
-                                    # TODO: Does not work with N = 128, investigate.
-                                    block_shape = (M = 128, N = 64, K = 64),
-                                    operator = Operator.FPUOp{OP_M, OP_N, 1, CD_type},
+                                    block_shape = (M = 32, N = 32, K = 32),
+                                    operator = operator,
                                     global_a_layout = transpose_a ? Layout.AlignedRowMajor{A_type} : Layout.AlignedColMajor{A_type},
                                     global_b_layout = transpose_b ? Layout.AlignedRowMajor{B_type} : Layout.AlignedColMajor{B_type},
 
@@ -56,21 +59,10 @@ function benchmark_fpu()
     new_a_h = transpose_a ? transpose(a_h) : a_h
     new_b_h = transpose_b ? transpose(b_h) : b_h
 
-    return
-
+    return d
 end
 
-function benchmark_wmma()
-    transpose_a = false
-    transpose_b = false
-    A_type = Float16
-    B_type = Float16
-    CD_type = Float16
-    min_dimension = 2048
-    OP_M = 4
-    OP_N = 8
-    (M, N, K) = min_dimension .*[1, 1, 1]
-
+function benchmark_cublas()
     alpha = convert(A_type, 2)
     beta  = convert(CD_type, 3)
 
@@ -85,40 +77,23 @@ function benchmark_wmma()
     a   = CuArray(a_h)
     b   = CuArray(b_h)
     c   = CuArray(c_h)
-    d   = similar(c)
 
-    conf = GemmKernels.get_config(
-                                    gemm_shape = (M = M, N = N, K = K),
-                                    # TODO: Does not work with N = 128, investigate.
-                                    block_shape = (M = 128, N = 64, K = 64),
-                                    operator = Operator.WMMAOp{16, 16, 16, CD_type},
-                                    global_a_layout = transpose_a ? Layout.AlignedRowMajor{A_type} : Layout.AlignedColMajor{A_type},
-                                    global_b_layout = transpose_b ? Layout.AlignedRowMajor{B_type} : Layout.AlignedColMajor{B_type},
+    CUDA.CUBLAS.gemmEx!(
+        !transpose_a ? 'N' : 'T',
+        !transpose_b ? 'N' : 'T',
+        alpha,
+        a,
+        b,
+        beta,
+        c
+    )
 
-                                    global_c_layout = Layout.AlignedColMajor{CD_type},
-                                    global_d_layout = Layout.AlignedColMajor{CD_type},
-
-                                    is_a_col_major = !transpose_a,
-                                    is_b_col_major = !transpose_b,
-                                    )
-
-    GemmKernels.matmul(a, b, c, d, conf;
-                        transform_shared_to_regs_a = Transform.Elementwise(x -> x * alpha),
-                        transform_shared_to_regs_c = Transform.Elementwise(x -> x * beta),
-                        kernel = Kernel.matmul_pipelined
-                        )
-
-    # Transpose outputs, if necessary
-    new_a_h = transpose_a ? transpose(a_h) : a_h
-    new_b_h = transpose_b ? transpose(b_h) : b_h
-
-    return
-
+    return c
 end
  
 function profiler_main()
-    benchmark_wmma()
-    benchmark_fpu()
+    r1 = benchmark_fpu()
+    r2 = benchmark_cublas()
 
     CUDA.@profile begin
         NVTX.@mark "FPU 1" 
@@ -126,9 +101,11 @@ function profiler_main()
         NVTX.@mark "FPU 2" 
         benchmark_fpu()
 
-        NVTX.@mark "WMMA 1" 
-        benchmark_wmma()
-        NVTX.@mark "WMMA 2" 
-        benchmark_wmma()
+        NVTX.@mark "BENCHMARK 1" 
+        benchmark_cublas()
+        NVTX.@mark "BENCHMARK 2" 
+        benchmark_cublas()
     end
 end
+
+isinteractive() || profiler_main()

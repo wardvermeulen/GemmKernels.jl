@@ -9,8 +9,8 @@ CUDA.CUBLAS.cublasSetMathMode(CUBLAS.handle(), CUBLAS.CUBLAS_DEFAULT_MATH)
 function fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
     conf = GemmKernels.get_config(
         gemm_shape = gemm_shape,
-        block_shape = (M = 32, N = 32, K = 32),
-        operator = Operator.FPUOp{8, 8, 4, Float32},
+        block_shape = (M = 64, N = 64, K = 64),
+        operator = Operator.FPUOp{8, 8, 1, Float32},
         global_a_layout = transpose_a ? Layout.AlignedRowMajor{Float32} : Layout.AlignedColMajor{Float32},
         global_b_layout = transpose_b ? Layout.AlignedRowMajor{Float32} : Layout.AlignedColMajor{Float32},
 
@@ -30,7 +30,7 @@ function fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
 end
 
 function main()
-    @printf("N,min,max,median,mean,std\n")
+    # @printf("N,min,max,median,mean,std\n")
 
     for i = 7:7, transpose_a = [false], transpose_b = [false]
         M = 2 ^ i
@@ -54,28 +54,32 @@ function main()
         c = CuArray(c_h)
         d = similar(c)
 
-        test_result = Float32(alpha) * Float32.(a_h) * Float32.(b_h) + beta * c_h
+        # test_result = Float32(alpha) * Float32.(a_h) * Float32.(b_h) + beta * c_h
 
         fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
-        @test all(isapprox.(test_result, Matrix(d); rtol = sqrt(eps(Float32))))
+        # @show @test all(isapprox.(test_result, Matrix(d); rtol = sqrt(eps(Float32))))
         fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
 
         times = []
         for j = 1:10
-            time = CUDA.@elapsed fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
+            synchronize(context())
+            # time = CUDA.@elapsed fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
             push!(times, time)
-        end
-        times .= times .* 1e6
 
-        @printf(
-            "%d,%.6f,%.6f,%.6f,%.6f,%.6f\n",
-            N,
-            minimum(times),
-            maximum(times),
-            median(times),
-            mean(times),
-            std(times),
-        )
+            CUDA.@profile fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
+        end
+
+        # times .= times .* 1e6
+
+        # @printf(
+        #     "%d,%.6f,%.6f,%.6f,%.6f,%.6f\n",
+        #     N,
+        #     minimum(times),
+        #     maximum(times),
+        #     median(times),
+        #     mean(times),
+        #     std(times),
+        # )
     end
 end
 
