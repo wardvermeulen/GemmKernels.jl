@@ -66,36 +66,3 @@ for i = 7:12, transpose_a = [false], transpose_b = [false]
         std(times),
     )
 end
-
-
-
-# function benchmark_matmul(a, b, c)
-#     alpha = rand(Float32)
-#     beta = rand(Float32)
-
-#     CUDA.@sync begin
-#         CUDA.CUBLAS.gemmEx!(!transpose_a ? 'N' : 'T', !transpose_b ? 'N' : 'T', alpha, a, b, beta, c)
-#     end
-# end
-
-# a_h = rand(Float32, (M, K)) / sqrt(Float32(K))
-# b_h = rand(Float32, (K, N)) / sqrt(Float32(K))
-# c_h = rand(Float32, (M, N))
-
-# # Transpose input if necessary
-# a_h = transpose_a ? transpose(a_h) : a_h
-# b_h = transpose_b ? transpose(b_h) : b_h
-
-# a   = CuArray(a_h)
-# b   = CuArray(b_h)
-# c   = CuArray(c_h)
-
-# # warmup
-# benchmark_matmul(a, b, c)
-
-# # profile
-# for i = 7 : 14
-#     CUDA.@profile begin
-#         benchmark_matmul(a, b, c)
-#     end
-# end
