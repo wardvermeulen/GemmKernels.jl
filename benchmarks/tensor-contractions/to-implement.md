@@ -14,7 +14,7 @@
 - [ ] abcde-efcad-bf
 
 # 4 x 2 x 4
-- [ ] abcd-ea-ebcd <span style="color:orange">WIP</span>
+- [x] abcd-ea-ebcd <span style="color:green">Vectorised store!</span> <span style="color:red">Bad performance still? A tensor also vectorised?</span>
 - [ ] abcd-eb-aecd
 - [ ] abcd-ec-abed
 
