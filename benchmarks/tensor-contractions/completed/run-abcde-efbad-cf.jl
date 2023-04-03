@@ -11,6 +11,11 @@ using Printf
 
 # TCCG benchmark ?: D_abcde = A_efbad * B_cf
 
+test_or_bench::Bool = false
+if (size(ARGS, 1) == 1)
+    test_or_bench = parse(Bool, ARGS[1])
+end
+
 # sizes for each dimension
 SA = 16
 SB = 16
@@ -19,11 +24,8 @@ SD = 16
 SE = 16
 SF = 128
 
-A_tmp = rand(Float16, (SE, SF, SB, SA, SD))
-B_tmp = rand(Float16, (SC, SF))
-
-A = CuArray(A_tmp)
-B = CuArray(B_tmp)
+A = CuArray(rand(Float16, (SE, SF, SB, SA, SD)))
+B = CuArray(rand(Float16, (SC, SF)))
 
 # layout for the A tensor
 abstract type LayoutA{T} <: Layout.AlignedColMajor{T} end
@@ -36,26 +38,18 @@ abstract type LayoutA{T} <: Layout.AlignedColMajor{T} end
 
     f = K
 
-    # e = M % Base.size(workspace, 1)
-    # b = (M ÷ Base.size(workspace, 1)) % Base.size(workspace, 3)
-    # a = ((M ÷ Base.size(workspace, 1)) ÷ Base.size(workspace, 3)) % Base.size(workspace, 4)
-    # d = ((M ÷ Base.size(workspace, 1)) ÷ Base.size(workspace, 3)) ÷ Base.size(workspace, 4)
-
     e = M % Base.size(workspace, 1)
     b = (M ÷ Base.size(workspace, 1)) % Base.size(workspace, 3)
     a = (M ÷ (Base.size(workspace, 1) * Base.size(workspace, 3))) % Base.size(workspace, 4)
     d = M ÷ (Base.size(workspace, 1) * Base.size(workspace, 3) * Base.size(workspace, 4))
 
-    offset  = 1
-    offset += e 
-    offset += f * Base.size(workspace, 1) 
-    offset += b * Base.size(workspace, 1) * Base.size(workspace, 2)
-    offset += a * Base.size(workspace, 1) * Base.size(workspace, 2) * Base.size(workspace, 3)
-    offset += d * Base.size(workspace, 1) * Base.size(workspace, 2) * Base.size(workspace, 3) * Base.size(workspace, 4)
-
-    # if (threadIdx().x == 3 || threadIdx().x == 2)
-    #     @cushow (M, d, b, a, offset)
-    # end
+    offset = 
+        1 +
+        e +
+        f * Base.size(workspace, 1) +
+        b * Base.size(workspace, 1) * Base.size(workspace, 2) +
+        a * Base.size(workspace, 1) * Base.size(workspace, 2) * Base.size(workspace, 3) +
+        d * Base.size(workspace, 1) * Base.size(workspace, 2) * Base.size(workspace, 3) * Base.size(workspace, 4)
 
     Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
 end
@@ -72,11 +66,16 @@ abstract type LayoutB{T} <: Layout.AlignedColMajor{T} end
     f = K
     c = N
 
-    offset  = 1 
-    offset += c 
-    offset += f * Base.size(workspace, 1)
+    offset = 
+        1 +
+        c +
+        f * Base.size(workspace, 1)
 
-    Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+    x = ntuple(Val(NUMEL)) do i
+        VecElement{T}(workspace[offset + (i - 1) * Base.size(workspace, 1)])
+    end
+
+    return x
 end
 
 # layout for the C tensor
@@ -204,18 +203,8 @@ end
 function test()
     D_reference = cutensor_impl(algo = CUDA.CUTENSOR.CUTENSOR_ALGO_GETT)
     D_gemmkernels = gemmkernels_impl()
-    # D_cpu = zeros(Float16, (SA, SB, SC, SD, SE))
-    
-    # @tensor begin
-    #     D_cpu[a, b, c, d, e] = A[e, f, b, a, d] * B[c, f]
-    # end
 
-    # @show D_cpu[1:10, 1:10, 1, 1, 1]
-
-    @show D_reference[1:10, 1:10, 1, 1, 1]
-    @show D_gemmkernels[1:10, 1:10, 1, 1, 1]
-
-    display(@test all(isapprox.(Array(D_reference), Array(D_gemmkernels); rtol = sqrt(eps(Float16)))))
+    @test all(isapprox.(Array(D_reference), Array(D_gemmkernels); rtol = sqrt(eps(Float16))))
 end
 
 # Taken from BenchmarkTools.jl: src/trials.jl
@@ -261,10 +250,10 @@ end
 
 # Main entry point
 function main()
-    display(test())
-    println()
+    # display(test())
+    # println()
 
     bench()
 end
 
-!isinteractive() && test()
+!isinteractive() && (if test_or_bench == false display(test()) else main() end)

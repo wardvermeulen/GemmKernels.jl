@@ -23,7 +23,7 @@ SC = 16
 SD = 16
 SE = 8
 
-A = CuArray(ones(Float16, (SA, SD, SE, SC)))
+A = CuArray(rand(Float16, (SA, SD, SE, SC)))
 B = CuArray(rand(Float16, (SB, SD, SE)))
 
 # layout for the A tensor

@@ -11,18 +11,20 @@ using TensorOperations
 
 # TCCG benchmark ?: D_abc = A_adec * B_ebd
 
+test_or_bench::Bool = false
+if (size(ARGS, 1) == 1)
+    test_or_bench = parse(Bool, ARGS[1])
+end
+
 # sizes for each dimension
 SA = 16
-SB = 128
-SC = 8
-SD = 16
-SE = 8
+SB = 16 * 16
+SC = 16
+SD = 32
+SE = 64
 
-A_tmp = rand(Float16, (SA, SD, SE, SC))
-B_tmp = ones(Float16, (SE, SB, SD)) 
-
-A = CuArray(A_tmp)
-B = CuArray(B_tmp)
+A = CuArray(rand(Float16, (SA, SD, SE, SC)))
+B = CuArray(rand(Float16, (SE, SB, SD)))
 
 # layout for the A tensor
 abstract type LayoutA{T} <: Layout.AlignedColMajor{T} end
@@ -39,11 +41,12 @@ abstract type LayoutA{T} <: Layout.AlignedColMajor{T} end
     a = M % Base.size(workspace, 1)
     c = M ÷ Base.size(workspace, 1)
 
-    offset  = 1
-    offset += a 
-    offset += d * Base.size(workspace, 1) 
-    offset += e * Base.size(workspace, 1) * Base.size(workspace, 2)
-    offset += c * Base.size(workspace, 1) * Base.size(workspace, 2) * Base.size(workspace, 3)
+    offset = 
+        1 +
+        a +
+        d * Base.size(workspace, 1) +
+        e * Base.size(workspace, 1) * Base.size(workspace, 2) +
+        c * Base.size(workspace, 1) * Base.size(workspace, 2) * Base.size(workspace, 3)
 
     Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
 end
@@ -62,12 +65,15 @@ abstract type LayoutB{T} <: Layout.AlignedColMajor{T} end
 
     b = N
 
-    offset  = 1 
-    offset += e 
-    offset += b * Base.size(workspace, 1)
-    offset += d * Base.size(workspace, 1) * Base.size(workspace, 2)
+    offset = 
+        1 +
+        e +
+        b * Base.size(workspace, 1) +
+        d * Base.size(workspace, 1) * Base.size(workspace, 2)
 
-    Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+    x = ntuple(Val(NUMEL)) do i
+        @inbounds VecElement{T}(workspace[offset + (i - 1) * Base.size(workspace, 1) * Base.size(workspace, 2)])
+    end
 end
 
 # layout for the C tensor
@@ -102,7 +108,7 @@ end
 
 # implementation using GemmKernels.jl
 function gemmkernels_impl(;benchmark = false)
-    D = CuArray(zeros(Float32, (SA, SB, SC)))
+    D = CuArray(zeros(Float16, (SA, SB, SC)))
 
     M = SA * SC
     N = SB
@@ -110,17 +116,17 @@ function gemmkernels_impl(;benchmark = false)
 
     conf = GemmKernels.get_config(
                                   gemm_shape = (M = M, N = N, K = K),
-                                  operator = Operator.WMMAOp{16, 16, 16, Float32},
+                                  operator = Operator.WMMAOp{16, 16, 16, Float16},
 
                                   global_a_layout = LayoutA{Float16},
                                   global_b_layout = LayoutB{Float16},
-                                  global_c_layout = LayoutC{Float32},
-                                  global_d_layout = LayoutD{Float32},
+                                  global_c_layout = LayoutC{Float16},
+                                  global_d_layout = LayoutD{Float16},
 
                                   shared_a_layout = Layout.Padded{Layout.AlignedColMajor{Float16}, 8},
                                   shared_b_layout = Layout.Padded{Layout.AlignedColMajor{Float16}, 8},
-                                  shared_c_layout = Layout.AlignedColMajor{Float32},
-                                  shared_d_layout = Layout.AlignedColMajor{Float32},
+                                  shared_c_layout = Layout.AlignedColMajor{Float16},
+                                  shared_d_layout = Layout.AlignedColMajor{Float16},
 
                                   is_a_col_major = true,
                                   is_b_col_major = true,
@@ -128,7 +134,7 @@ function gemmkernels_impl(;benchmark = false)
 
     if !benchmark
         GemmKernels.matmul(A, B, D, D, conf;
-                        kernel = Kernel.matmul_pipelined
+                        kernel = Kernel.matmul_singlestage
                         )
         D
     else
@@ -137,7 +143,7 @@ function gemmkernels_impl(;benchmark = false)
         for i = 1 : 10000
             synchronize(context())
             time = CUDA.@elapsed GemmKernels.matmul(A, B, D, D, conf;
-                            kernel = Kernel.matmul_pipelined
+                            kernel = Kernel.matmul_singlestage
                         )
             push!(times, time)
         end
@@ -155,7 +161,7 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
                                           D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                           CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                           algo = algo,
-                                          compute_type = Float32)
+                                          compute_type = Float16)
 
 
 
@@ -166,7 +172,7 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
                                 0,
                                 D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                 CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-                                compute_type = Float32,
+                                compute_type = Float16,
                                 plan = plan)
         D
     else
@@ -180,7 +186,7 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
                                     0,
                                     D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                     CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-                                    compute_type = Float32,
+                                    compute_type = Float16,
                                     plan = plan)
             push!(times, time)
         end
@@ -193,18 +199,8 @@ end
 function test()
     D_reference = cutensor_impl(algo = CUDA.CUTENSOR.CUTENSOR_ALGO_GETT)
     D_gemmkernels = gemmkernels_impl()
-    # D_cpu = zeros(Float16, (SA, SB, SC))
-    
-    # @tensor begin
-    #     D_cpu[a,b,c] = A[a,d,e,c] * B[e,b,d]
-    # end
 
-    # @show D_cpu[1:10, 1:10, 1, 1, 1]
-
-    @show D_reference[1:10, 1:10, 1]
-    @show D_gemmkernels[1:10, 1:10, 1]
-
-    display(@test all(isapprox.(Array(D_reference), Array(D_gemmkernels); rtol = sqrt(eps(Float16)))))
+    @test all(isapprox.(Array(D_reference), Array(D_gemmkernels); rtol = sqrt(eps(Float16))))
 end
 
 # Taken from BenchmarkTools.jl: src/trials.jl
@@ -256,4 +252,4 @@ function main()
     bench()
 end
 
-!isinteractive() && test()
+!isinteractive() && (if test_or_bench == false display(test()) else main() end)
