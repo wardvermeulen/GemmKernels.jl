@@ -21,12 +21,14 @@ function fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
         is_b_col_major = !transpose_b,
     )
 
-    GemmKernels.matmul(
-        a, b, c, d, conf;
-        transform_shared_to_regs_a = Transform.Elementwise(x -> x * alpha),
-        transform_shared_to_regs_c = Transform.Elementwise(x -> x * beta),
-        kernel = Kernel.matmul_singlestage
-    )
+    CUDA.@sync begin
+        GemmKernels.matmul(
+            a, b, c, d, conf;
+            transform_shared_to_regs_a = Transform.Elementwise(x -> x * alpha),
+            transform_shared_to_regs_c = Transform.Elementwise(x -> x * beta),
+            kernel = Kernel.matmul_singlestage
+        )
+    end
 end
 
 function main()
@@ -62,9 +64,8 @@ function main()
 
         times = []
         for j = 1:10
-            synchronize(context())
             # time = CUDA.@elapsed fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
-            push!(times, time)
+            # push!(times, time)
 
             CUDA.@profile fpu_impl(transpose_a, transpose_b, alpha, a, b, beta, c, d, gemm_shape)
         end
