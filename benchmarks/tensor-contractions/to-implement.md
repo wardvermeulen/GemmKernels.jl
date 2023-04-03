@@ -1,5 +1,6 @@
 # 3 x 3 x 2
 - [x] abc-bda-dc
+- [x] abc-bda-cd <span style="color:red">NOT PART OF TCCG</span>
 - [ ] abc-dca-bd
 
 # 4 x 4 x 2
@@ -8,12 +9,12 @@
 - [ ] abcd-ebad-ce
 
 # 5 x 5 x 2
-- [x] abcde-efbad-cf
+- [ ] abcde-efbad-cf
 - [ ] abcde-ecbfa-fd
 - [ ] abcde-efcad-bf
 
 # 4 x 2 x 4
-- [x] abcd-ea-ebcd
+- [ ] abcd-ea-ebcd
 - [ ] abcd-eb-aecd
 - [ ] abcd-ec-abed
 
@@ -21,22 +22,24 @@
 - [x] ab-ac-cb
 
 # 2 x 3 x 3
-- [x] ab-acd-dbc
+- [ ] ab-acd-dbc
 - [ ] ab-cad-dcb
 
 # 3 x 2 x 3
-- [x] abc-ad-bdc
+- [ ] abc-ad-bdc
 
 # 3 x 3 x 2
-- [x] abc-acd-db
+- [ ] abc-acd-db
 - [ ] abc-adc-bd
 - [ ] abc-adc-db
 
 # 3 x 4 x 3
-- [x] abc-adec-ebd
+- [ ] abc-adec-ebd
+- [x] abc-adec-deb <span style="color:red">NOT PART OF TCCG</span>
+- [ ] abc-adec-bde <span style="color:orange">WIP</span> <span style="color:red">NOT PART OF TCCG</span>
 
 # 4 x 4 x 4
-- [x] abcd-aebf-dfce
+- [ ] abcd-aebf-dfce
 - [ ] abcd-aebf-fdec
 - [ ] abcd-aecf-bfde
 - [ ] abcd-aecf-fbed
@@ -49,7 +52,7 @@
 - [ ] abcd-eafd-fbec
 
 # 5 x 4 x 5
-- [x] abcdef-dega-gfbc
+- [ ] abcdef-dega-gfbc
 - [ ] abcdef-degb-gfac
 - [ ] abcdef-degc-gfab
 - [ ] abcdef-dfga-gebc
