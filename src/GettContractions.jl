@@ -51,13 +51,14 @@ function GETTContraction(
 
     # TODO: put all this in another file, something like tensor-layout.jl
 
+    # A tensor layout
+    @eval abstract type LocalLayoutA{T} <: Layout.AlignedColMajor{T} end
+
     # ? HACK: Convert vectors to tuples
     local_a_MK_strides = (
         Tuple(x for x in plan.a_MK_strides[1]),
         Tuple(x for x in plan.a_MK_strides[2])
     )
-
-    @eval abstract type LocalLayoutA{T} <: Layout.AlignedColMajor{T} end
 
     (M_GEMM_strides, K_GEMM_strides, is_load_strided) = (local_a_MK_strides[1], local_a_MK_strides[2], Int(plan.is_a_load_strided))
 
@@ -98,13 +99,26 @@ function GETTContraction(
             offset += stride_offset * multiplicator
         end
 
-        # TODO: Add strided load
         if ($is_load_strided == false)
             return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
         end
+
+        # TODO: Add strided load
+        # x = ntuple(Vals(NUMEL)) do i
+        #     @inbounds VecElement{T}(workspace[offset + i])
+        # end
     end
 
+    # B tensor layout
     @eval abstract type LocalLayoutB{T} <: Layout.AlignedColMajor{T} end
+
+    # ? HACK: Convert vectors to tuples
+    local_b_KN_strides = (
+        Tuple(x for x in plan.b_KN_strides[1]),
+        Tuple(x for x in plan.b_KN_strides[2])
+    )
+
+    (K_GEMM_strides, N_GEMM_strides, is_load_strided) = (local_b_KN_strides[1], local_b_KN_strides[2], Int(plan.is_b_load_strided))
 
     @eval @inline function Layout.load(::Type{LocalLayoutB{T}}, workspace, tile::Tile{size}) where {T, size}
         NUMEL = 16 ÷ sizeof(T)
@@ -112,38 +126,49 @@ function GETTContraction(
         K = tile.base.K + tile.offset.K
         N = tile.base.N + tile.offset.N
 
-        d = K
-        c = N
+        offset = 1
 
-        offset = 1 + d + c * Base.size(workspace, 1)
+        # ? UGLY: The same thing twice 
+        divisor = 1
 
-        Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+        for GEMM_stride in $K_GEMM_strides
+            stride_offset = (K ÷ divisor) % Base.size(workspace, GEMM_stride)
+            divisor *= Base.size(workspace, GEMM_stride)
+
+            multiplicator = 1
+            for i = 1 : (GEMM_stride - 1)
+                multiplicator *= Base.size(workspace, i)
+            end
+
+            offset += stride_offset * multiplicator
+        end
+
+        divisor = 1
+
+        for GEMM_stride in $N_GEMM_strides
+            stride_offset = (N ÷ divisor) % Base.size(workspace, GEMM_stride)
+            divisor *= Base.size(workspace, GEMM_stride)
+
+            multiplicator = 1
+            for i = 1 : (GEMM_stride - 1)
+                multiplicator *= Base.size(workspace, i)
+            end
+
+            offset += stride_offset * multiplicator
+        end
+
+        if ($is_load_strided == false)
+            return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+        end
+
+        # TODO: Add strided load
+        # x = ntuple(Vals(NUMEL)) do i
+        #     @inbounds VecElement{T}(workspace[offset + i])
+        # end
     end
 
-    # @eval @inline function Layout.load(::Type{LocalLayoutB{T}}, workspace, tile::Tile{size}) where {T, size}
-    #     NUMEL = 16 ÷ sizeof(T)
-
-    #     K = tile.base.K + tile.offset.K
-    #     N = tile.base.N + tile.offset.N
-
-    #     offset = 1
-
-    #     for (stride, strides_plan, offsetdim) in [(K, plan.B_K_strides, plan.B_K_offsetdim), (N, plan.B_N_strides, plan.B_N_offsetdim)]
-    #         divisor = 1
-
-    #         for (stride_idx, offset_idx) in zip((strides_plan, offsetdim))
-    #             stride_offset = (stride ÷ divisor) % Base.size(workspace, stride_idx)
-    #             divisor *= Base.size(workspace, stride_idx)
-
-    #             offset += stride_offset * Base.size(workspace, offset_idx)
-    #         end
-    #     end
-
-    #     if (!plan.is_B_access_strided)
-    #         return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
-    #     end
-    # end
-
+    # C tensor layout
+    # TODO: Add non-zero variant
     @eval abstract type LocalLayoutC{T} <: Layout.AlignedColMajor{T} end
 
     @eval @inline function Layout.load(::Type{LocalLayoutC{T}}, workspace, tile::Tile{size}) where {T, size}
@@ -154,63 +179,64 @@ function GETTContraction(
         end
     end
 
-    # @eval @inline function Layout.load(::Type{LocalLayoutC{T}}, workspace, tile::Tile{size}) where {T, size}
-    #     NUMEL = 16 ÷ sizeof(T)
-
-    #     ntuple(Val(N)) do i
-    #         @inbounds VecElement{T}(zero(T))
-    #     end
-    # end
-
+    # D tensor layout
     @eval abstract type LocalLayoutD{T} <: Layout.AlignedColMajor{T} end
+
+    # ? HACK: Convert vectors to tuples
+    local_d_MN_strides = (
+        Tuple(x for x in plan.d_MN_strides[1]),
+        Tuple(x for x in plan.d_MN_strides[2])
+    )
+
+    (M_GEMM_strides, N_GEMM_strides, is_store_strided) = (local_d_MN_strides[1], local_d_MN_strides[2], Int(plan.is_d_store_strided))
 
     @eval @inline function Layout.store!(::Type{LocalLayoutD{T}}, workspace, value, tile::Tile{size}) where {T, size}
         NUMEL = 16 ÷ sizeof(T)
 
+        M = tile.base.M + tile.offset.M
+        N = tile.base.N + tile.offset.N
+
+        # TODO: Add vectorised store
+
+        if ($is_store_strided == false)
+            return Layout.vstorea(value, Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+        end
+
         for i = 1 : NUMEL
-            M = tile.base.M + tile.offset.M
-            N = tile.base.N + tile.offset.N
+            offset = 1
 
-            c = N
+            # ? UGLY: The same thing twice 
+            divisor = 1
 
-            a = (M + i - 1) ÷ Base.size(workspace, 2)
-            b = (M + i - 1) % Base.size(workspace, 2)
+            for GEMM_stride in $M_GEMM_strides
+                stride_offset = ((M + i - 1) ÷ divisor) % Base.size(workspace, GEMM_stride)
+                divisor *= Base.size(workspace, GEMM_stride)
 
-            @inbounds workspace[a + 1, b + 1, c + 1] = value[i].value
+                multiplicator = 1
+                for i = 1 : (GEMM_stride - 1)
+                    multiplicator *= Base.size(workspace, i)
+                end
+
+                offset += stride_offset * multiplicator
+            end
+
+            divisor = 1
+
+            for GEMM_stride in $N_GEMM_strides
+                stride_offset = (N ÷ divisor) % Base.size(workspace, GEMM_stride)
+                divisor *= Base.size(workspace, GEMM_stride)
+
+                multiplicator = 1
+                for i = 1 : (GEMM_stride - 1)
+                    multiplicator *= Base.size(workspace, i)
+                end
+
+                offset += stride_offset * multiplicator
+            end
+
+            @inbounds workspace[offset] = value[i].value
         end
     end
-
-    # @eval @inline function Layout.store!(::Type{LocalLayoutD{T}}, workspace, tile::Tile{size}, value) where {T, size}
-    #     NUMEL = 16 ÷ sizeof(T)
-
-    #     M = tile.base.M + tile.offset.M
-    #     N = tile.base.N + tile.offset.N
-
-    #     for i = 1:NUMEL
-
-    #         for (stride_nr, (stride, strides_plan, offsetdim)) in enumerate([(M, plan.D_M_strides, plan.D_M_offsetdim), (N, plan.D_N_strides, plan.D_N_offsetdim)])
-
-    #             divisor = 1
-
-    #             if stride_nr == 1
-    #                 stride += (i - 1)
-    #             end
-
-    #             for (stride_idx, offset_idx) in zip((strides_plan, offsetdim))
-    #                 stride_offset = (stride ÷ divisor) % Base.size(workspace, stride_idx)
-    #                 divisor *= Base.size(workspace, stride_idx)
-
-    #                 offset += stride_offset * Base.size(workspace, offset_idx)
-    #             end
-
-    #             if (plan.is_D_access_strided == true)
-    #                 @inbounds workspace[offset] = value[i].value
-    #             end
-
-    #         end
-
-    #     end
-    # end
 
     conf = GemmKernels.get_config(
         gemm_shape = (M = plan.M, N = plan.N, K = plan.K),

@@ -30,7 +30,7 @@ function main()
         false,
 
         # d_MN_strides
-        ([1, 3], [2]),
+        ([2, 1], [3]),
         # is_d_store_strided
         true,
     )
