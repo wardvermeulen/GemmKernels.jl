@@ -14,13 +14,15 @@ A_type = Float32
 B_type = Float32
 CD_type = Float32
 
-(M, N, K) = 256 .* [1, 1, 1]
+shape = 4096
 
 function benchmark_fpu()
+    (M, N, K) = shape .* [1, 1, 1]
+
     operator = Operator.FPUOp{8, 8, 1, CD_type}
 
     alpha = convert(A_type, 2)
-    beta  = convert(CD_type, 3)
+    beta  = convert(CD_type, 0)
 
     a_h = rand(A_type, (M, K)) / sqrt(A_type(K))
     b_h = rand(B_type, (K, N)) / sqrt(B_type(K))
@@ -37,7 +39,7 @@ function benchmark_fpu()
 
     conf = GemmKernels.get_config(
                                     gemm_shape = (M = M, N = N, K = K),
-                                    block_shape = (M = 32, N = 32, K = 32),
+                                    block_shape = (M = 128, N = 128, K = 32),
                                     operator = operator,
                                     global_a_layout = transpose_a ? Layout.AlignedRowMajor{A_type} : Layout.AlignedColMajor{A_type},
                                     global_b_layout = transpose_b ? Layout.AlignedRowMajor{B_type} : Layout.AlignedColMajor{B_type},
@@ -59,12 +61,16 @@ function benchmark_fpu()
     new_a_h = transpose_a ? transpose(a_h) : a_h
     new_b_h = transpose_b ? transpose(b_h) : b_h
 
+    display(@test all(isapprox.(alpha * CD_type.(new_a_h) * CD_type.(new_b_h) + beta * c_h, Array(d); rtol = sqrt(eps(A_type)))))
+
     return d
 end
 
 function benchmark_cublas()
+    (M, N, K) = shape .* [1, 1, 1]
+
     alpha = convert(A_type, 2)
-    beta  = convert(CD_type, 3)
+    beta  = convert(CD_type, 0)
 
     a_h = rand(A_type, (M, K)) / sqrt(A_type(K))
     b_h = rand(B_type, (K, N)) / sqrt(B_type(K))
@@ -87,6 +93,11 @@ function benchmark_cublas()
         beta,
         c
     )
+
+    # @show alpha * CD_type.(a_h) * CD_type.(b_h) + beta * c_h 
+    # @show Array(c)
+
+    display(@test all(isapprox.(alpha * CD_type.(a_h) * CD_type.(b_h) + beta * c_h, Array(c); rtol = sqrt(eps(A_type)))))
 
     return c
 end
