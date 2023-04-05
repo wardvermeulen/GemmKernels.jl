@@ -6,6 +6,8 @@ using GemmKernels
 using GemmKernels.Layout
 using GemmKernels.Tiling
 
+using KernelAbstractions.Extras: @unroll
+
 # TODO LIST
 # - [ ] Test if vectorised store works properly
 # - [ ] Refactor code (layouts to another file)
@@ -24,9 +26,74 @@ export ALGO
     ALGO_DEFAULT = -1
 end
 
+abstract type LayoutA{T} <: Layout.AlignedColMajor{T} end
+
+@inline function Layout.load(::Type{LayoutA{T}}, workspace, tile::Tile{size}) where {T, size}
+    NUMEL = 16 ÷ sizeof(T)
+
+    M = tile.base.M + tile.offset.M
+    K = tile.base.K + tile.offset.K
+
+    d = K
+
+    a = M ÷ Base.size(workspace, 1)
+    b = M % Base.size(workspace, 1)
+
+    offset = 1 + b + d * Base.size(workspace, 1) + a * Base.size(workspace, 1) * Base.size(workspace, 2)
+
+    Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+end
+
+# layout for the B tensor
+abstract type LayoutB{T} <: Layout.AlignedColMajor{T} end
+
+@inline function Layout.load(::Type{LayoutB{T}}, workspace, tile::Tile{size}) where {T, size}
+    NUMEL = 16 ÷ sizeof(T)
+
+    K = tile.base.K + tile.offset.K
+    N = tile.base.N + tile.offset.N
+
+    d = K
+    c = N
+
+    offset = 1 + d + c * Base.size(workspace, 1)
+
+    Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+end
+
+# layout for the C tensor
+abstract type LayoutC{T} <: Layout.AlignedColMajor{T} end
+
+@inline function Layout.load(::Type{LayoutC{T}}, workspace, tile::Tile{size}) where {T, size}
+    N = 16 ÷ sizeof(T)
+
+    ntuple(Val(N)) do i
+        VecElement{T}(zero(T))
+    end
+end
+
+# layout for the D tensor
+abstract type LayoutD{T} <: Layout.AlignedColMajor{T} end
+
+@inline function Layout.store!(::Type{LayoutD{T}}, workspace, value, tile::Tile{size}) where {T, size}
+    NUMEL = 16 ÷ sizeof(T)
+
+    for i = 1 : NUMEL
+        M = tile.base.M + tile.offset.M
+        N = tile.base.N + tile.offset.N
+
+        c = N
+
+        a = (M + i - 1) ÷ Base.size(workspace, 2)
+        b = (M + i - 1) % Base.size(workspace, 2)
+
+        @inbounds workspace[a + 1, b + 1, c + 1] = value[i].value
+    end
+end
+
 export PLAN
 
-struct PLAN
+Base.@kwdef mutable struct PLAN
     algo::ALGO
 
     M::Int32
@@ -46,17 +113,14 @@ struct PLAN
     # D tensor plan variables
     d_MN_strides::Tuple{Vector{Int32}, Vector{Int32}}
     is_d_store_strided::Bool
+
+    are_types_created::Bool = false
+    gemm_conf = nothing
 end
 
-export GETTContraction
+export GETTCreateLayoutTypes
 
-function GETTContraction(
-    plan::PLAN,
-    α, A::CuArray, B::CuArray,
-    β, C::CuArray,
-    D::CuArray,
-    )
-
+function GETTCreateLayoutTypes(plan::PLAN)
     # TODO: put all this in another file, something like tensor-layout.jl
 
     # A tensor layout
@@ -77,6 +141,18 @@ function GETTContraction(
         local_a_strided_over
     )
 
+    multiplicators = Vector{Int32}(undef, length(local_a_MK_strides[1]))
+    tmp = (32, 512, 16)
+
+    for i = 1 : length(local_a_MK_strides[1])
+        multiplicators[i] = 1
+        for j = 1 : (i - 1)
+            multiplicators[i] *= tmp[j]
+        end
+    end
+
+    multiplicators = Tuple(x for x in multiplicators)
+
     @eval @inline function Layout.load(::Type{LocalLayoutA{T}}, workspace, tile::Tile{size}) where {T, size}
         NUMEL = 16 ÷ sizeof(T)
 
@@ -88,26 +164,35 @@ function GETTContraction(
         # ? UGLY: The same thing twice 
         divisor = 1
 
-        for GEMM_stride in $M_GEMM_strides
+        # for GEMM_stride in $M_GEMM_strides
+        #     stride_offset = (M ÷ divisor) % Base.size(workspace, GEMM_stride)
+        #     divisor *= Base.size(workspace, GEMM_stride)
+
+        #     multiplicator = 1
+        #     for i = 1 : (GEMM_stride - 1)
+        #         multiplicator *= Base.size(workspace, i)
+        #     end
+
+        #     tmp_offset += stride_offset * multiplicator
+        # end
+
+        i = 1
+        @unroll for GEMM_stride in $M_GEMM_strides
             stride_offset = (M ÷ divisor) % Base.size(workspace, GEMM_stride)
             divisor *= Base.size(workspace, GEMM_stride)
 
-            multiplicator = 1
-            for i = 1 : (GEMM_stride - 1)
-                multiplicator *= Base.size(workspace, i)
-            end
-
-            tmp_offset += stride_offset * multiplicator
+            tmp_offset += stride_offset * ($multiplicators)[i]
+            i += 1
         end
 
         divisor = 1
 
-        for GEMM_stride in $K_GEMM_strides
+        @unroll for GEMM_stride in $K_GEMM_strides
             stride_offset = (K ÷ divisor) % Base.size(workspace, GEMM_stride)
             divisor *= Base.size(workspace, GEMM_stride)
 
             multiplicator = 1
-            for i = 1 : (GEMM_stride - 1)
+            @unroll for i = 1 : (GEMM_stride - 1)
                 multiplicator *= Base.size(workspace, i)
             end
 
@@ -131,7 +216,7 @@ function GETTContraction(
             # Use a temporary variable to avoid dynamic invocation
             tmp_strided_over_size = 1
 
-            for stride_idx in $strided_over
+            @unroll for stride_idx in $strided_over
                 if (stride_idx == 0)
                     tmp_strided_over_size *= 1
                 else
@@ -300,14 +385,14 @@ function GETTContraction(
         end
     end
 
-    conf = GemmKernels.get_config(
+    plan.gemm_conf = GemmKernels.get_config(
         gemm_shape = (M = plan.M, N = plan.N, K = plan.K),
         operator = Operator.WMMAOp{16, 16, 16, Float16},
 
         global_a_layout = LocalLayoutA{Float16},
-        global_b_layout = LocalLayoutB{Float16},
-        global_c_layout = LocalLayoutC{Float16},
-        global_d_layout = LocalLayoutD{Float16},
+        global_b_layout = LayoutB{Float16},
+        global_c_layout = LayoutC{Float16},
+        global_d_layout = LayoutD{Float16},
 
         shared_a_layout = Layout.Padded{Layout.AlignedColMajor{Float16}, 8},
         shared_b_layout = Layout.Padded{Layout.AlignedColMajor{Float16}, 8},
@@ -318,10 +403,26 @@ function GETTContraction(
         is_b_col_major = true,
     )
 
-    GemmKernels.matmul(A, B, C, D, conf;
-        kernel = Kernel.matmul_singlestage)
-
-    return D
+    plan.are_types_created = true
 end
+
+export GETTContraction
+
+function GETTContraction(
+    plan::PLAN,
+    α, A::CuArray, B::CuArray,
+    β, C::CuArray,
+    D::CuArray,
+    )
+
+    time = CUDA.@elapsed GemmKernels.matmul(A, B, C, D, plan.gemm_conf;
+        kernel = Kernel.matmul_pipelined)
+    @show Float64(time * 1e6)
+end
+
+    # if (plan.are_types_created == false || isnothing(plan.gemm_conf) == true)
+    #     @show "creating types"
+    #     GETTCreateLayoutTypes(plan)
+    # end
 
 end
