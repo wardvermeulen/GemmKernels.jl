@@ -17,24 +17,25 @@ function main()
         # K
         SD,
 
-        2,
-
         # A_MK_strides
         ([1, 3], [2]),
         # is_a_load_strided
         false,
+        # a_strided_over
+        [],
 
         # B_KN_strides
         ([1], [2]),
         # is_b_load_strided
         false,
+        # b_strided_over
+        [],
 
         # d_MN_strides
         ([2, 1], [3]),
         # is_d_store_strided
         true,
     )
-
 
     A = CuArray(rand(Float16, (SB, SD, SA)))
     B = CuArray(rand(Float16, (SD, SC)))

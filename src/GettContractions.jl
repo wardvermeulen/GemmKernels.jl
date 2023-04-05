@@ -6,6 +6,14 @@ using GemmKernels
 using GemmKernels.Layout
 using GemmKernels.Tiling
 
+# TODO LIST
+# - [ ] Test if vectorised store works properly
+# - [ ] Refactor code (layouts to another file)
+# - [ ] Check if the dynamic function invocation error disappears when using a function for
+#       the strided load
+# - [ ] Also provide a function for the strided store
+# - [ ] Experiment with a non-zero C matrix in the run files, and then generalise to LocalLayoutC
+
 export ALGO
 
 @enum ALGO::Int32 begin
@@ -25,15 +33,15 @@ struct PLAN
     N::Int32
     K::Int32
 
-    TEST::Int32
-
     # A tensor plan variables
     a_MK_strides::Tuple{Vector{Int32}, Vector{Int32}}
     is_a_load_strided::Bool
+    a_strided_over::Vector{Int32}
 
     # B tensor plan variables
     b_KN_strides::Tuple{Vector{Int32}, Vector{Int32}}
     is_b_load_strided::Bool
+    b_strided_over::Vector{Int32}
 
     # D tensor plan variables
     d_MN_strides::Tuple{Vector{Int32}, Vector{Int32}}
@@ -60,7 +68,14 @@ function GETTContraction(
         Tuple(x for x in plan.a_MK_strides[2])
     )
 
-    (M_GEMM_strides, K_GEMM_strides, is_load_strided) = (local_a_MK_strides[1], local_a_MK_strides[2], Int(plan.is_a_load_strided))
+    local_a_strided_over = Tuple(x for x in plan.a_strided_over)
+
+    (M_GEMM_strides, K_GEMM_strides, is_load_strided, strided_over) = (
+        local_a_MK_strides[1], 
+        local_a_MK_strides[2], 
+        Int(plan.is_a_load_strided), 
+        local_a_strided_over
+    )
 
     @eval @inline function Layout.load(::Type{LocalLayoutA{T}}, workspace, tile::Tile{size}) where {T, size}
         NUMEL = 16 ÷ sizeof(T)
@@ -68,7 +83,7 @@ function GETTContraction(
         M = tile.base.M + tile.offset.M
         K = tile.base.K + tile.offset.K
 
-        offset = 1
+        tmp_offset = 1
 
         # ? UGLY: The same thing twice 
         divisor = 1
@@ -82,7 +97,7 @@ function GETTContraction(
                 multiplicator *= Base.size(workspace, i)
             end
 
-            offset += stride_offset * multiplicator
+            tmp_offset += stride_offset * multiplicator
         end
 
         divisor = 1
@@ -96,29 +111,61 @@ function GETTContraction(
                 multiplicator *= Base.size(workspace, i)
             end
 
-            offset += stride_offset * multiplicator
+            tmp_offset += stride_offset * multiplicator
         end
+
+        # This is a hack to prevent the 'unsupported dynamic function invocation' error.
+        offset = tmp_offset
 
         if ($is_load_strided == false)
-            return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
-        end
+            # Vectorised load
 
-        # TODO: Add strided load
-        # x = ntuple(Vals(NUMEL)) do i
-        #     @inbounds VecElement{T}(workspace[offset + i])
-        # end
+            # For some reason, the hack is not needed were this vectorised load used.
+            # Probably because the offset is calculated before it is dispatched to the function.
+            # Solution: make a separate function for the strided load?
+            # TODO: Experiment with this.
+            return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+        else
+            # Strided load
+
+            # Use a temporary variable to avoid dynamic invocation
+            tmp_strided_over_size = 1
+
+            for stride_idx in $strided_over
+                if (stride_idx == 0)
+                    tmp_strided_over_size *= 1
+                else
+                    tmp_strided_over_size *= Base.size(workspace, stride_idx)
+                end
+            end
+
+            # The same hack used for the offset is also applied here.
+            strided_over_size = tmp_strided_over_size
+
+            x = ntuple(Val(NUMEL)) do i
+                @inbounds VecElement{T}(workspace[offset + (i - 1) * strided_over_size])
+            end
+
+            return x
+        end
     end
 
     # B tensor layout
     @eval abstract type LocalLayoutB{T} <: Layout.AlignedColMajor{T} end
 
-    # ? HACK: Convert vectors to tuples
     local_b_KN_strides = (
         Tuple(x for x in plan.b_KN_strides[1]),
         Tuple(x for x in plan.b_KN_strides[2])
     )
+    
+    local_b_strided_over = Tuple(x for x in plan.b_strided_over)
 
-    (K_GEMM_strides, N_GEMM_strides, is_load_strided) = (local_b_KN_strides[1], local_b_KN_strides[2], Int(plan.is_b_load_strided))
+    (K_GEMM_strides, N_GEMM_strides, is_load_strided, strided_over) = (
+        local_b_KN_strides[1],
+        local_b_KN_strides[2],
+        Int(plan.is_b_load_strided),
+        local_b_strided_over
+    )
 
     @eval @inline function Layout.load(::Type{LocalLayoutB{T}}, workspace, tile::Tile{size}) where {T, size}
         NUMEL = 16 ÷ sizeof(T)
@@ -126,7 +173,7 @@ function GETTContraction(
         K = tile.base.K + tile.offset.K
         N = tile.base.N + tile.offset.N
 
-        offset = 1
+        tmp_offset = 1
 
         # ? UGLY: The same thing twice 
         divisor = 1
@@ -140,7 +187,7 @@ function GETTContraction(
                 multiplicator *= Base.size(workspace, i)
             end
 
-            offset += stride_offset * multiplicator
+            tmp_offset += stride_offset * multiplicator
         end
 
         divisor = 1
@@ -154,17 +201,32 @@ function GETTContraction(
                 multiplicator *= Base.size(workspace, i)
             end
 
-            offset += stride_offset * multiplicator
+            tmp_offset += stride_offset * multiplicator
         end
+
+        offset = tmp_offset
 
         if ($is_load_strided == false)
             return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
-        end
+        else
+            tmp_strided_over_size = 1
 
-        # TODO: Add strided load
-        # x = ntuple(Vals(NUMEL)) do i
-        #     @inbounds VecElement{T}(workspace[offset + i])
-        # end
+            for stride_idx in $strided_over
+                if (stride_idx == 0)
+                    tmp_strided_over_size *= 1
+                else
+                    tmp_strided_over_size *= Base.size(workspace, stride_idx)
+                end
+            end
+
+            strided_over_size = tmp_strided_over_size
+
+            x = ntuple(Val(NUMEL)) do i
+                @inbounds VecElement{T}(workspace[offset + (i - 1) * strided_over_size])
+            end
+
+            return x
+        end
     end
 
     # C tensor layout
