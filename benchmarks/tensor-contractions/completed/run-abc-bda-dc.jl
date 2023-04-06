@@ -2,6 +2,7 @@ using BenchmarkTools
 using GemmKernels
 using GemmKernels.Tiling
 using GemmKernels.Layout
+using GemmKernels.TensorPlan
 using CUDA
 using NVTX
 using Test
@@ -149,7 +150,7 @@ function gettcontractions_impl(;benchmark = false)
     D = CuArray(zeros(Float16, (SA, SB, SC)))
 
     plan = PLAN(
-        algo = GETT.ALGO_GETT,
+        algo = TensorPlan.ALGO_GETT,
 
         M = SA * SB,
         N = SC,

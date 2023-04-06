@@ -33,7 +33,10 @@ Base.@kwdef mutable struct PLAN
     d_MN_strides::Tuple{Vector{Int}, Vector{Int}}
     is_d_store_strided::Bool
 
-    are_types_created::Bool = false
+    TensorLayoutA = nothing
+    TensorLayoutB = nothing
+    TensorLayoutC = nothing
+    TensorLayoutD = nothing
     gemm_conf = nothing
 end
 
