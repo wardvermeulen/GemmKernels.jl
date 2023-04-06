@@ -14,13 +14,16 @@ function main()
         K = SD,
 
         a_MK_strides = ([1, 3], [2]),
+        a_MK_strides_sizes = [SB, SD, SA],
         is_a_load_strided = false,
 
         b_KN_strides = ([1], [2]),
+        b_KN_strides_sizes = [SD, SC],
         is_b_load_strided = false,
         b_strided_over = [],
 
         d_MN_strides = ([2, 1], [3]),
+        d_MN_strides_sizes = [SA, SB, SC],
         is_d_store_strided = true,
     )
 

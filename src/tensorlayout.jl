@@ -124,7 +124,7 @@ function createALayout(plan::PLAN)
         T_mod,
         GM_mul, GK_mul,
         is_load_strided, strided_over_size
-    ) = precomputeGETTLayoutConstants([16, 512, 32], plan.a_MK_strides, plan.is_a_load_strided, plan.a_strided_over)
+    ) = precomputeGETTLayoutConstants(plan.a_MK_strides_sizes, plan.a_MK_strides, plan.is_a_load_strided, plan.a_strided_over)
 
     @eval abstract type TensorLayoutA{T} <: Layout.AlignedColMajor{T} end
 
@@ -169,7 +169,7 @@ function createBLayout(plan::PLAN)
         T_mod,
         GK_mul, GN_mul,
         is_load_strided, strided_over_size
-    ) = precomputeGETTLayoutConstants([512, 512], plan.b_KN_strides, plan.is_b_load_strided, plan.b_strided_over)
+    ) = precomputeGETTLayoutConstants(plan.b_KN_strides_sizes, plan.b_KN_strides, plan.is_b_load_strided, plan.b_strided_over)
 
     @eval abstract type TensorLayoutB{T} <: Layout.AlignedColMajor{T} end
 
@@ -230,7 +230,7 @@ function createDLayout(plan::PLAN)
         T_mod,
         GM_mul, GN_mul,
         is_store_strided, strided_over_size
-    ) = precomputeGETTLayoutConstants([32, 16, 512], plan.d_MN_strides, plan.is_d_store_strided)
+    ) = precomputeGETTLayoutConstants(plan.d_MN_strides_sizes, plan.d_MN_strides, plan.is_d_store_strided)
     
     @eval abstract type TensorLayoutD{T} <: Layout.AlignedColMajor{T} end
 

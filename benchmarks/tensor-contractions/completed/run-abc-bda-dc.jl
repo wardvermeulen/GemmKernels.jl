@@ -20,10 +20,10 @@ if (size(ARGS, 1) == 1)
 end
 
 # sizes for each dimension
-SA = 32
-SB = 16
-SC = 512
-SD = 512
+SA = 64
+SB = 32
+SC = 2048
+SD = 2048
 
 A = CuArray(rand(Float16, (SB, SD, SA)))
 B = CuArray(rand(Float16, (SD, SC)))
@@ -126,11 +126,7 @@ function gemmkernels_impl(;benchmark = false)
         GemmKernels.matmul(A, B, D, D, conf;
                         kernel = Kernel.matmul_pipelined
                         )
-        # time = CUDA.@elapsed GemmKernels.matmul(A, B, D, D, conf;
-                        # kernel = Kernel.matmul_pipelined
-                        # )
-        # @show time * 1e6
-        # D[1:10, 1:10, 1]
+        D
     else
         times = []
 
@@ -157,14 +153,17 @@ function gettcontractions_impl(;benchmark = false)
         K = SD,
 
         a_MK_strides = ([1, 3], [2]),
+        a_MK_strides_sizes = [SB, SD, SA],
         is_a_load_strided = false,
         a_strided_over = [],
 
         b_KN_strides = ([1], [2]),
+        b_KN_strides_sizes = [SD, SC],
         is_b_load_strided = false,
         b_strided_over = [],
 
         d_MN_strides = ([2, 1], [3]),
+        d_MN_strides_sizes = [SA, SB, SC],
         is_d_store_strided = true,
     )
 
@@ -202,7 +201,7 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
                                           D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                           CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                           algo = algo,
-                                          compute_type = Float32)
+                                          compute_type = Float16)
 
 
 
@@ -213,7 +212,7 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
                                 0,
                                 D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                 CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-                                compute_type = Float32,
+                                compute_type = Float16,
                                 plan = plan)
         D
     else
@@ -227,7 +226,7 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
                                     0,
                                     D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                     CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-                                    compute_type = Float32,
+                                    compute_type = Float16,
                                     plan = plan)
             push!(times, time)
         end
@@ -242,7 +241,11 @@ function test()
     D_gemmkernels = gemmkernels_impl()
     D_gettcontractions = gettcontractions_impl()
 
-    @test all(isapprox.(Array(D_reference), Array(D_gettcontractions); rtol = sqrt(eps(Float16))))
+    @show D_reference[1:10, 1:10, 1]
+    @show D_gemmkernels[1:10, 1:10, 1]
+    @show D_gettcontractions[1:10, 1:10, 1]
+
+    @test all(isapprox.(Array(D_gettcontractions), Array(D_gemmkernels); rtol = sqrt(eps(Float16))))
 end
 
 # Taken from BenchmarkTools.jl: src/trials.jl
