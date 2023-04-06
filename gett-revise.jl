@@ -1,13 +1,13 @@
 using CUDA
 
-include("src/GettContractions.jl")
-using .GETT
+using GemmKernels.GETT
+using GemmKernels.TensorPlan
 
 function main()
     SA, SB, SC, SD = 32, 16, 512, 512;
 
     plan = PLAN(
-        algo = GETT.ALGO_GETT,
+        algo = TensorPlan.ALGO_GETT,
 
         M = SA * SB,
         N = SC,
@@ -15,7 +15,6 @@ function main()
 
         a_MK_strides = ([1, 3], [2]),
         is_a_load_strided = false,
-        a_strided_over = [],
 
         b_KN_strides = ([1], [2]),
         is_b_load_strided = false,

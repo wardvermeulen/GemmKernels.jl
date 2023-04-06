@@ -3,9 +3,13 @@ using GemmKernels
 using GemmKernels.Tiling
 using GemmKernels.Layout
 using CUDA
+using NVTX
 using Test
 using Statistics
 using Printf
+
+include("../../../src/GettContractions.jl")
+using .GETT
 
 # TCCG benchmark 1: D_abc = A_bda * B_dc
 
@@ -15,10 +19,10 @@ if (size(ARGS, 1) == 1)
 end
 
 # sizes for each dimension
-SA = 64
-SB = 32
-SC = 2048
-SD = 2048
+SA = 32
+SB = 16
+SC = 512
+SD = 512
 
 A = CuArray(rand(Float16, (SB, SD, SA)))
 B = CuArray(rand(Float16, (SD, SC)))
@@ -115,11 +119,17 @@ function gemmkernels_impl(;benchmark = false)
                                   is_b_col_major = true,
                                  )
 
+    # @show conf
+
     if !benchmark
         GemmKernels.matmul(A, B, D, D, conf;
                         kernel = Kernel.matmul_pipelined
                         )
-        D
+        # time = CUDA.@elapsed GemmKernels.matmul(A, B, D, D, conf;
+                        # kernel = Kernel.matmul_pipelined
+                        # )
+        # @show time * 1e6
+        # D[1:10, 1:10, 1]
     else
         times = []
 
@@ -128,6 +138,53 @@ function gemmkernels_impl(;benchmark = false)
             time = CUDA.@elapsed GemmKernels.matmul(A, B, D, D, conf;
                             kernel = Kernel.matmul_pipelined
                         )
+            push!(times, time)
+        end
+
+        times
+    end
+end
+
+function gettcontractions_impl(;benchmark = false)
+    D = CuArray(zeros(Float16, (SA, SB, SC)))
+
+    plan = PLAN(
+        algo = GETT.ALGO_GETT,
+
+        M = SA * SB,
+        N = SC,
+        K = SD,
+
+        a_MK_strides = ([1, 3], [2]),
+        is_a_load_strided = false,
+        a_strided_over = [],
+
+        b_KN_strides = ([1], [2]),
+        is_b_load_strided = false,
+        b_strided_over = [],
+
+        d_MN_strides = ([2, 1], [3]),
+        is_d_store_strided = true,
+    )
+
+    GETTCreateLayoutTypes(plan)
+
+    if !benchmark
+        GETTContraction(plan, Float16(1.0), A, B, Float16(0.0), D, D)
+        # time = CUDA.@elapsed GETTContraction(plan, Float16(1.0), A, B, Float16(0.0), D, D)
+        # @show time * 1e6
+        # D[1:10, 1:10, 1]
+        D
+    else
+        times = []
+
+        for i = 1 : 10000
+            synchronize(context())
+            # time = CUDA.@elapsed GETTContraction(plan, Float16(1.0), A, B, Float16(0.0), D, D)
+            time = CUDA.@elapsed GemmKernels.matmul(A, B, D, D, plan.gemm_conf;
+                            kernel = Kernel.matmul_pipelined
+                        )
+
             push!(times, time)
         end
 
@@ -182,8 +239,9 @@ end
 function test()
     D_reference = cutensor_impl()
     D_gemmkernels = gemmkernels_impl()
+    D_gettcontractions = gettcontractions_impl()
 
-    @test all(isapprox.(Array(D_reference), Array(D_gemmkernels); rtol = sqrt(eps(Float16))))
+    @test all(isapprox.(Array(D_reference), Array(D_gettcontractions); rtol = sqrt(eps(Float16))))
 end
 
 # Taken from BenchmarkTools.jl: src/trials.jl
@@ -204,16 +262,20 @@ function bench()
 
     bench_gemmkernels = gemmkernels_impl(benchmark = true)
 
+    bench_gettcontractions = gettcontractions_impl(benchmark = true)
+
     for (title, bench) in [("cuTENSOR (let heuristic choose algorithm):", bench_cutensor),
                            ("cuTENSOR (force GETT):", bench_cutensor_gett),
                            ("cuTENSOR (force TGETT):", bench_cutensor_tgett),
                            ("cuTENSOR (force TTGT):", bench_cutensor_ttgt),
                            ("GemmKernels:", bench_gemmkernels),
+                           ("GETTContraction:", bench_gettcontractions),
                            ("rmskew: cuTENSOR (let heuristic choose algorithm):", rmskew(bench_cutensor)),
                            ("rmskew: cuTENSOR (force GETT):", rmskew(bench_cutensor_gett)),
                            ("rmskew: cuTENSOR (force TGETT):", rmskew(bench_cutensor_tgett)),
                            ("rmskew: cuTENSOR (force TTGT):", rmskew(bench_cutensor_ttgt)),
-                           ("rmskew: GemmKernels:", rmskew(bench_gemmkernels))
+                           ("rmskew: GemmKernels:", rmskew(bench_gemmkernels)),
+                           ("rmskew: GETTContraction:", rmskew(bench_gettcontractions)),
                           ]
         println(title)
         bench .= bench .* 1e6 # convert seconds to us
@@ -236,3 +298,20 @@ function main()
 end
 
 !isinteractive() && (if test_or_bench == false display(test()) else main() end)
+
+# CUDA.@profile begin
+#     NVTX.@mark "GEMMKERNELS 1" 
+#     gemmkernels_impl()
+#     NVTX.@mark "GEMMKERNELS 2" 
+#     gemmkernels_impl()
+
+#     NVTX.@mark "GETTCONTRACTIONS 1" 
+#     gettcontractions_impl()
+#     NVTX.@mark "GETTCONTRACTIONS 2" 
+#     gettcontractions_impl()
+
+#     NVTX.@mark "CUTENSOR 1" 
+#     cutensor_impl()
+#     NVTX.@mark "CUTENSOR 2" 
+#     cutensor_impl()
+# end

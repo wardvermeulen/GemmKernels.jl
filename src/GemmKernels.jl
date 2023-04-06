@@ -14,4 +14,8 @@ include("launch.jl")
 
 include("blas.jl")
 
+include("tensorplan.jl")
+include("tensorlayout.jl")
+include("GettContractions.jl")
+
 end
