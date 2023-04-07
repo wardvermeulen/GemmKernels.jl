@@ -20,20 +20,20 @@ Base.@kwdef mutable struct PLAN
     K::Int
 
     # A tensor plan variables
-    a_MK_strides::Tuple{Vector{Int}, Vector{Int}}
     a_MK_strides_sizes::Vector{Int}
+    a_MK_strides::Tuple{Vector{Int}, Vector{Int}}
     is_a_load_strided::Bool
     a_strided_over::Union{Vector{Int}, Nothing} = nothing
 
     # B tensor plan variables
-    b_KN_strides::Tuple{Vector{Int}, Vector{Int}}
     b_KN_strides_sizes::Vector{Int}
+    b_KN_strides::Tuple{Vector{Int}, Vector{Int}}
     is_b_load_strided::Bool
     b_strided_over::Union{Vector{Int}, Nothing} = nothing
 
     # D tensor plan variables
-    d_MN_strides::Tuple{Vector{Int}, Vector{Int}}
     d_MN_strides_sizes::Vector{Int}
+    d_MN_strides::Tuple{Vector{Int}, Vector{Int}}
     is_d_store_strided::Bool
 
     TensorLayoutA = nothing

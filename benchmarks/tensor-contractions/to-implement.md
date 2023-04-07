@@ -1,6 +1,7 @@
 # 3 x 3 x 2
-- [x] abc-bda-dc
-- [x] abc-bda-cd <span style="color:red">NOT PART OF TCCG</span>
+- [x] abc-bda-dc (SVV)
+- [x] abc-adb-dc (VVV) <span style="color:red">NOT PART OF TCCG</span>
+- [x] abc-bda-cd (SVS) <span style="color:red">NOT PART OF TCCG</span>
 - [ ] abc-dca-bd
 
 # 4 x 4 x 2

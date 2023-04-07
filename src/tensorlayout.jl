@@ -259,7 +259,7 @@ function createDLayout(plan::PLAN)
                 j += 1
             end
 
-            return Layout.vstorea(value, Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+            return Layout.vstorea!(Layout.Vec{NUMEL, T}, pointer(workspace), value, offset)
         end
     
         for i = 1 : NUMEL

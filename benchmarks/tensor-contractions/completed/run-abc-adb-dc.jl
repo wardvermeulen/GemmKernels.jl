@@ -10,7 +10,7 @@ using Test
 using Statistics
 using Printf
 
-# TCCG benchmark 1: D_abc = A_bda * B_dc
+# TCCG benchmark 1: D_abc = A_adb * B_dc
 
 test_or_bench::Bool = false
 if (size(ARGS, 1) == 1)
@@ -23,7 +23,7 @@ SB = 32
 SC = 2048
 SD = 2048
 
-A = CuArray(rand(Float16, (SB, SD, SA)))
+A = CuArray(rand(Float16, (SA, SD, SB)))
 B = CuArray(rand(Float16, (SD, SC)))
 
 # layout for the A tensor
@@ -37,10 +37,10 @@ abstract type LayoutA{T} <: Layout.AlignedColMajor{T} end
 
     d = K
 
-    a = M ÷ Base.size(workspace, 1)
-    b = M % Base.size(workspace, 1)
+    a = M % Base.size(workspace, 1)
+    b = M ÷ Base.size(workspace, 1)
 
-    offset = 1 + b + d * Base.size(workspace, 1) + a * Base.size(workspace, 1) * Base.size(workspace, 2)
+    offset = 1 + a + d * Base.size(workspace, 1) + b * Base.size(workspace, 1) * Base.size(workspace, 2)
 
     Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
 end
@@ -79,17 +79,17 @@ abstract type LayoutD{T} <: Layout.AlignedColMajor{T} end
 @inline function Layout.store!(::Type{LayoutD{T}}, workspace, value, tile::Tile{size}) where {T, size}
     NUMEL = 16 ÷ sizeof(T)
 
-    for i = 1 : NUMEL
-        M = tile.base.M + tile.offset.M
-        N = tile.base.N + tile.offset.N
+    M = tile.base.M + tile.offset.M
+    N = tile.base.N + tile.offset.N
 
-        c = N
+    c = N
 
-        a = (M + i - 1) ÷ Base.size(workspace, 2)
-        b = (M + i - 1) % Base.size(workspace, 2)
+    a = M % Base.size(workspace, 1)
+    b = M ÷ Base.size(workspace, 1)
 
-        @inbounds workspace[a + 1, b + 1, c + 1] = value[i].value
-    end
+    offset = 1 + a + b * Base.size(workspace, 1) + c * Base.size(workspace, 1) * Base.size(workspace, 2)
+
+    Layout.vstorea!(Layout.Vec{NUMEL, T}, pointer(workspace), value, offset)
 end
 
 # implementation using GemmKernels.jl
@@ -150,7 +150,7 @@ function gettcontractions_impl(;benchmark = false)
         N = SC,
         K = SD,
 
-        a_MK_strides_sizes = [SB, SD, SA],
+        a_MK_strides_sizes = [SA, SD, SB],
         a_MK_strides = ([1, 3], [2]),
         is_a_load_strided = false,
         a_strided_over = [],
@@ -161,9 +161,10 @@ function gettcontractions_impl(;benchmark = false)
         b_strided_over = [],
 
         d_MN_strides_sizes = [SA, SB, SC],
-        d_MN_strides = ([2, 1], [3]),
+        d_MN_strides = ([1, 2], [3]),
         is_d_store_strided = true,
     )
+
 
     GETTCreateLayoutTypes(plan)
 
@@ -194,7 +195,7 @@ end
 function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = false)
     D = CuArray(zeros(Float16, (SA, SB, SC)))
 
-    plan = CUDA.CUTENSOR.plan_contraction(A, [ 'b', 'd', 'a' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+    plan = CUDA.CUTENSOR.plan_contraction(A, [ 'a', 'd', 'b' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                           B, [ 'd', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                           D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                           CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
@@ -205,7 +206,7 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
 
     if !benchmark
         CUDA.CUTENSOR.contraction!(1,
-                                A, [ 'b', 'd', 'a' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                A, [ 'a', 'd', 'b' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                 B, [ 'd', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                 0,
                                 D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
@@ -219,7 +220,7 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
         for i = 1 : 10000
             synchronize(context())
             time = CUDA.@elapsed CUDA.CUTENSOR.contraction!(1,
-                                    A, [ 'b', 'd', 'a' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                    A, [ 'a', 'd', 'b' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                     B, [ 'd', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                     0,
                                     D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
@@ -243,7 +244,7 @@ function test()
     @show D_gemmkernels[1:10, 1:10, 1]
     @show D_gettcontractions[1:10, 1:10, 1]
 
-    @test all(isapprox.(Array(D_gettcontractions), Array(D_reference); rtol = sqrt(eps(Float16))))
+    @test all(isapprox.(Array(D_reference), Array(D_gettcontractions); rtol = sqrt(eps(Float16))))
 end
 
 # Taken from BenchmarkTools.jl: src/trials.jl
