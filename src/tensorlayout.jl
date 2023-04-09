@@ -3,18 +3,8 @@ module TensorLayout
 
 using CUDA
 using GemmKernels.Layout
-using GemmKernels.TensorPlan
 using GemmKernels.Tiling
 using KernelAbstractions.Extras: @unroll
-
-export createLayoutTypes
-
-function createLayoutTypes(plan::PLAN)
-    plan.TensorLayoutA = createALayout(plan)
-    plan.TensorLayoutB = createBLayout(plan)
-    plan.TensorLayoutC = createCLayout(plan)
-    plan.TensorLayoutD = createDLayout(plan)
-end
 
 @inline function sloada(::Type{Layout.Vec{NUMEL, T}}, workspace, offset::Int, strided_over_size::Int) where {NUMEL, T}
     return ntuple(Val(NUMEL)) do i
@@ -117,14 +107,19 @@ function precomputeGETTLayoutConstants(
     )
 end
 
-function createALayout(plan::PLAN)
+function createALayout(
+    T_strides_sizes::Vector{Int},
+    T_strides::Tuple{Vector{Int}, Vector{Int}},
+    is_load_or_store_strided::Bool,
+    load_or_store_strided_over::Union{Vector{Int}, Nothing} = nothing,
+)
     (
         TM_strides, TK_strides,
         TM_div, TK_div,
         T_mod,
         GM_mul, GK_mul,
         is_load_strided, strided_over_size
-    ) = precomputeGETTLayoutConstants(plan.a_MK_strides_sizes, plan.a_MK_strides, plan.is_a_load_strided, plan.a_strided_over)
+    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_or_store_strided, load_or_store_strided_over)
 
     @eval abstract type TensorLayoutA{T} <: Layout.AlignedColMajor{T} end
 
@@ -162,14 +157,19 @@ function createALayout(plan::PLAN)
     return TensorLayoutA
 end
 
-function createBLayout(plan::PLAN)
+function createBLayout(
+    T_strides_sizes::Vector{Int},
+    T_strides::Tuple{Vector{Int}, Vector{Int}},
+    is_load_or_store_strided::Bool,
+    load_or_store_strided_over::Union{Vector{Int}, Nothing} = nothing,
+)
     (
         TK_strides, TN_strides,
         TK_div, TN_div,
         T_mod,
         GK_mul, GN_mul,
         is_load_strided, strided_over_size
-    ) = precomputeGETTLayoutConstants(plan.b_KN_strides_sizes, plan.b_KN_strides, plan.is_b_load_strided, plan.b_strided_over)
+    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_or_store_strided, load_or_store_strided_over)
 
     @eval abstract type TensorLayoutB{T} <: Layout.AlignedColMajor{T} end
 
@@ -208,7 +208,7 @@ function createBLayout(plan::PLAN)
 end
 
 # TODO: Add non-zero variant
-function createCLayout(plan::PLAN)
+function createCLayout()
     @eval abstract type TensorLayoutC{T} <: Layout.AlignedColMajor{T} end
 
     @eval @inline function Layout.load(::Type{TensorLayoutC{T}}, workspace, tile::Tile{size}) where {T, size}
@@ -223,14 +223,19 @@ function createCLayout(plan::PLAN)
 end
 
 # TODO: Make this also use the strided_over contant. It will probably be more efficient.
-function createDLayout(plan::PLAN)
+function createDLayout(
+    T_strides_sizes::Vector{Int},
+    T_strides::Tuple{Vector{Int}, Vector{Int}},
+    is_load_or_store_strided::Bool,
+    load_or_store_strided_over::Union{Vector{Int}, Nothing} = nothing,
+)
     (
         TM_strides, TN_strides,
         TM_div, TN_div,
         T_mod,
         GM_mul, GN_mul,
         is_store_strided, strided_over_size
-    ) = precomputeGETTLayoutConstants(plan.d_MN_strides_sizes, plan.d_MN_strides, plan.is_d_store_strided)
+    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_or_store_strided, load_or_store_strided_over)
     
     @eval abstract type TensorLayoutD{T} <: Layout.AlignedColMajor{T} end
 
