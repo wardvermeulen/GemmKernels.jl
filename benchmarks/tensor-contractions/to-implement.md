@@ -5,17 +5,17 @@
 - [ ] abc-dca-bd
 
 # 4 x 4 x 2
-- [x] abcd-dbea-ec
+- [x] abcd-dbea-ec (SVV)
 - [ ] abcd-deca-be
 - [ ] abcd-ebad-ce
 
 # 5 x 5 x 2
-- [x] abcde-efbad-cf
+- [x] abcde-efbad-cf (SVS)
 - [ ] abcde-ecbfa-fd
 - [ ] abcde-efcad-bf
 
 # 4 x 2 x 4
-- [x] abcd-ea-ebcd <span style="color:green">Vectorised store!</span> <span style="color:red">Bad performance still? A tensor also vectorised?</span>
+- [x] abcd-ea-ebcd (VSV) <span style="color:green">Vectorised store!</span> <span style="color:red">Bad performance still? A tensor also vectorised?</span> 
 - [ ] abcd-eb-aecd
 - [ ] abcd-ec-abed
 
@@ -35,9 +35,9 @@
 - [ ] abc-adc-db
 
 # 3 x 4 x 3
-- [x] abc-adec-ebd
-- [x] abc-adec-deb <span style="color:red">NOT PART OF TCCG</span>
-- [x] abc-adec-bde <span style="color:red">NOT PART OF TCCG</span>
+- [x] abc-adec-ebd (SVV)
+- [x] abc-adec-deb (SVV) <span style="color:red">NOT PART OF TCCG</span>
+- [x] abc-adec-bde (SVS)  <span style="color:red">NOT PART OF TCCG</span>
 
 # 4 x 4 x 4
 - [ ] abcd-aebf-dfce

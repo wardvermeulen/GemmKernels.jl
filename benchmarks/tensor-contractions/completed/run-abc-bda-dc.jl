@@ -17,6 +17,8 @@ if (size(ARGS, 1) == 1)
     test_or_bench = parse(Bool, ARGS[1])
 end
 
+# using CUDA; SA = 64; SB = 32; SC = 2048; SD = 2048; A = CuArray(rand(Float16, (SB, SD, SA))); B = CuArray(rand(Float16, (SD, SC))); D = CuArray(zeros(Float16, (SA, SB, SC)));
+
 # sizes for each dimension
 SA = 64
 SB = 32
@@ -143,46 +145,17 @@ end
 function gettcontractions_impl(;benchmark = false)
     D = CuArray(zeros(Float16, (SA, SB, SC)))
 
-    plan = PLAN(
-        algo = TensorPlan.ALGO_GETT,
-
-        M = SA * SB,
-        N = SC,
-        K = SD,
-
-        a_MK_strides_sizes = [SB, SD, SA],
-        a_MK_strides = ([1, 3], [2]),
-        is_a_load_strided = false,
-        a_strided_over = [],
-
-        b_KN_strides_sizes = [SD, SC],
-        b_KN_strides = ([1], [2]),
-        is_b_load_strided = false,
-        b_strided_over = [],
-
-        d_MN_strides_sizes = [SA, SB, SC],
-        d_MN_strides = ([2, 1], [3]),
-        is_d_store_strided = true,
-    )
-
-    GETTCreateLayoutTypes(plan)
+    plan = TensorPlan.ContractionPlan(A, ['b', 'd', 'a'], B, ['d', 'c'], D, ['a', 'b', 'c'], D, ['a', 'b', 'c'])
 
     if !benchmark
-        GETTContraction(plan, Float16(1.0), A, B, Float16(0.0), D, D)
-        # time = CUDA.@elapsed GETTContraction(plan, Float16(1.0), A, B, Float16(0.0), D, D)
-        # @show time * 1e6
-        # D[1:10, 1:10, 1]
+        TensorPlan.contraction!(plan, Float16(1.0), A, B, Float16(0.0), D, D)
         D
     else
         times = []
 
         for i = 1 : 10000
             synchronize(context())
-            # time = CUDA.@elapsed GETTContraction(plan, Float16(1.0), A, B, Float16(0.0), D, D)
-            time = CUDA.@elapsed GemmKernels.matmul(A, B, D, D, plan.gemm_conf;
-                            kernel = Kernel.matmul_pipelined
-                        )
-
+            time = CUDA.@elapsed TensorPlan.contraction!(plan, Float16(1.0), A, B, Float16(0.0), D, D) 
             push!(times, time)
         end
 

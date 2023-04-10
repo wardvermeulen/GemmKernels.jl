@@ -1,5 +1,6 @@
 module TensorPlan
 
+using GemmKernels
 using GemmKernels.TensorLayout
 
 ModeType = AbstractVector{<:Union{Char,Integer}}
@@ -111,22 +112,50 @@ mutable struct ContractionPlan
     desc::ContractionDescriptor
     algo::ALGO
 
-    GEMM_size::NamedTuple{(:M, :N, :K),Tuple{Int,Int,Int}}
+    TensorLayoutA
+    TensorLayoutB
+    TensorLayoutC
+    TensorLayoutD
 
-    TensorLayoutA,
-    TensorLayoutB,
-    TensorLayoutC,
-    TensorLayoutD,
+    gemmConf
 
     # For now, default algo is GETT
     function ContractionPlan(desc::ContractionDescriptor, algo::ALGO=ALGO_GETT)
         (
+            gemmShape,
             TensorLayoutA,
             TensorLayoutB,
             TensorLayoutC,
             TensorLayoutD,
         ) = createGETTContractionPlan(desc)
 
+        gemmConf = GemmKernels.get_config(
+            gemm_shape = gemmShape,
+            operator = Operator.WMMAOp{16, 16, 16, Float16},
+
+            global_a_layout = TensorLayoutA{Float16},
+            global_b_layout = TensorLayoutB{Float16},
+            global_c_layout = TensorLayoutC{Float16},
+            global_d_layout = TensorLayoutD{Float16},
+
+            shared_a_layout = Layout.Padded{Layout.AlignedColMajor{Float16}, 8},
+            shared_b_layout = Layout.Padded{Layout.AlignedColMajor{Float16}, 8},
+            shared_c_layout = Layout.AlignedColMajor{Float16},
+            shared_d_layout = Layout.AlignedColMajor{Float16},
+
+            is_a_col_major = true,
+            is_b_col_major = true,
+        )
+
+        return new(
+            desc,
+            algo,
+            TensorLayoutA,
+            TensorLayoutB,
+            TensorLayoutC,
+            TensorLayoutD,
+            gemmConf
+        )
     end
 
     function ContractionPlan(
@@ -148,6 +177,21 @@ mutable struct ContractionPlan
     end
 
 
+end
+
+export contraction!
+
+function contraction!(plan::ContractionPlan, α, a, b, β, c, d)
+    if plan.algo == ALGO_GETT
+        GemmKernels.matmul(
+            a, b, c, d, plan.gemmConf;
+            transform_shared_to_regs_a = Transform.Elementwise(x -> α * x),
+            transform_shared_to_regs_c = Transform.Elementwise(x -> β * x),
+            kernel = Kernel.matmul_pipelined,
+        )
+    else 
+        throw(ArgumentError("unsupported algo"))
+    end
 end
 
 function createGETTContractionPlan(desc::ContractionDescriptor)
@@ -205,12 +249,20 @@ function createGETTContractionPlan(desc::ContractionDescriptor)
 
     isDStoreStrided = (vcat(DMStridesIndices, DNStridesIndices) != 1:length(modeD))
 
+
+    gemmShape = (
+        M = prod(desc.descA.extent[AMStridesIndices]),
+        N = prod(desc.descB.extent[BNStridesIndices]),
+        K = prod(desc.descA.extent[AKStridesIndices]),
+    )
+
     TensorLayoutA = TensorLayout.createALayout(desc.descA.extent, (AMStridesIndices, AKStridesIndices), isALoadStrided, AStridedOver)
     TensorLayoutB = TensorLayout.createBLayout(desc.descB.extent, (BKStridesIndices, BNStridesIndices), isBLoadStrided, BStridedOver)
     TensorLayoutC = TensorLayout.createCLayout()
     TensorLayoutD = TensorLayout.createDLayout(desc.descD.extent, (DMStridesIndices, DNStridesIndices), isDStoreStrided)
 
     return (
+        gemmShape,
         TensorLayoutA,
         TensorLayoutB,
         TensorLayoutC,
