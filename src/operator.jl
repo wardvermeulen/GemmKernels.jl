@@ -31,6 +31,7 @@ for (layout_type, convert_index_func) in [
                                        ]
     @eval begin
         # ? Maybe the other way around is more efficient ? 
+        # ! There is a difference between datatype and computetype needed.
         @inline fragtype_a(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}) where {M, N, K, T} = NTuple{M * K ÷ 4, T}
         @inline fragtype_b(::Type{FPUOp{M, N, K, T}}, ::Type{$layout_type{T}}) where {M, N, K, T} = NTuple{K * N ÷ 8, T}
 

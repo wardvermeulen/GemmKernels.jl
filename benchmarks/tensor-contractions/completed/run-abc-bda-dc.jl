@@ -212,11 +212,13 @@ function test()
     D_gemmkernels = gemmkernels_impl()
     D_gettcontractions = gettcontractions_impl()
 
-    @show D_reference[1:10, 1:10, 1]
-    @show D_gemmkernels[1:10, 1:10, 1]
-    @show D_gettcontractions[1:10, 1:10, 1]
+    # @show D_reference[1:10, 1:10, 1]
+    # @show D_gemmkernels[1:10, 1:10, 1]
+    # @show D_gettcontractions[1:10, 1:10, 1]
 
-    @test all(isapprox.(Array(D_gettcontractions), Array(D_reference); rtol = sqrt(eps(Float16))))
+    @test all(isapprox.(Array(D_reference), Array(D_gemmkernels); rtol = sqrt(eps(Float16))))
+    @test all(isapprox.(Array(D_reference), Array(D_gemmkernels); rtol = sqrt(eps(Float16))))
+    @test all(isapprox.(Array(D_reference), Array(D_gettcontractions); rtol = sqrt(eps(Float16))))
 end
 
 # Taken from BenchmarkTools.jl: src/trials.jl

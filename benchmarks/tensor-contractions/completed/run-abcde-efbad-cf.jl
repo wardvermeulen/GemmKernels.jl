@@ -11,6 +11,8 @@ using Printf
 
 # using TensorOperations
 
+# SA = 16; SB = 16; SC = 128; SD = 16; SE = 16; SF = 128; A = CuArray(rand(Float16, (SE, SF, SB, SA, SD))); B = CuArray(rand(Float16, (SC, SF))); D = CuArray(zeros(Float16, (SA, SB, SC, SD, SE)));
+
 # TCCG benchmark ?: D_abcde = A_efbad * B_cf
 
 test_or_bench::Bool = false

@@ -94,6 +94,7 @@ mutable struct ContractionDescriptor
         b, modeB::ModeType,
         c, modeC::ModeType,
         d, modeD::ModeType;
+        # ? Think about this for the FPUOp
         computeType=eltype(a)
     )
         return new(
@@ -131,17 +132,17 @@ mutable struct ContractionPlan
 
         gemmConf = GemmKernels.get_config(
             gemm_shape = gemmShape,
-            operator = Operator.WMMAOp{16, 16, 16, Float16},
+            operator = Operator.WMMAOp{16, 16, 16, desc.computeType},
 
-            global_a_layout = TensorLayoutA{Float16},
-            global_b_layout = TensorLayoutB{Float16},
-            global_c_layout = TensorLayoutC{Float16},
-            global_d_layout = TensorLayoutD{Float16},
+            global_a_layout = TensorLayoutA{desc.descA.dataType},
+            global_b_layout = TensorLayoutB{desc.descB.dataType},
+            global_c_layout = TensorLayoutC{desc.descC.dataType},
+            global_d_layout = TensorLayoutD{desc.descD.dataType},
 
-            shared_a_layout = Layout.Padded{Layout.AlignedColMajor{Float16}, 8},
-            shared_b_layout = Layout.Padded{Layout.AlignedColMajor{Float16}, 8},
-            shared_c_layout = Layout.AlignedColMajor{Float16},
-            shared_d_layout = Layout.AlignedColMajor{Float16},
+            shared_a_layout = Layout.Padded{Layout.AlignedColMajor{desc.descA.dataType}, 8},
+            shared_b_layout = Layout.Padded{Layout.AlignedColMajor{desc.descB.dataType}, 8},
+            shared_c_layout = Layout.AlignedColMajor{desc.descC.dataType},
+            shared_d_layout = Layout.AlignedColMajor{desc.descD.dataType},
 
             is_a_col_major = true,
             is_b_col_major = true,
@@ -158,6 +159,7 @@ mutable struct ContractionPlan
         )
     end
 
+    # No need for creating a ContractionDescriptor.
     function ContractionPlan(
         a, modeA::ModeType,
         b, modeB::ModeType,
@@ -175,8 +177,6 @@ mutable struct ContractionPlan
         )
         return ContractionPlan(desc, algo)
     end
-
-
 end
 
 export contraction!
@@ -248,7 +248,6 @@ function createGETTContractionPlan(desc::ContractionDescriptor)
     end
 
     isDStoreStrided = (vcat(DMStridesIndices, DNStridesIndices) != 1:length(modeD))
-
 
     gemmShape = (
         M = prod(desc.descA.extent[AMStridesIndices]),
