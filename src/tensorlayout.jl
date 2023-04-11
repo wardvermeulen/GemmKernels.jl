@@ -121,9 +121,11 @@ function createALayout(
         is_load_strided, strided_over_size
     ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_or_store_strided, load_or_store_strided_over)
 
-    @eval abstract type TensorLayoutA{T} <: Layout.AlignedColMajor{T} end
+    layoutId = rand(1:100000)
 
-    @eval @inline function Layout.load(::Type{TensorLayoutA{T}}, workspace, tile::Tile{size}) where {T, size}
+    @eval abstract type ($(Symbol("TensorLayoutA$layoutId"))){T} <: Layout.AlignedColMajor{T} end
+
+    @eval @inline function Layout.load(::Type{($(Symbol("TensorLayoutA$layoutId"))){T}}, workspace, tile::Tile{size}) where {T, size}
         NUMEL = 16 ÷ sizeof(T)
 
         M = tile.base.M + tile.offset.M
@@ -154,7 +156,7 @@ function createALayout(
         end
     end
 
-    return TensorLayoutA
+    return @eval ($(Symbol("TensorLayoutA$layoutId")))
 end
 
 function createBLayout(
