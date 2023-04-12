@@ -257,7 +257,7 @@ function createGETTContractionPlan(desc::ContractionDescriptor)
 
     TensorLayoutA = TensorLayout.createALayout(desc.descA.extent, (AMStridesIndices, AKStridesIndices), isALoadStrided, AStridedOver)
     TensorLayoutB = TensorLayout.createBLayout(desc.descB.extent, (BKStridesIndices, BNStridesIndices), isBLoadStrided, BStridedOver)
-    TensorLayoutC = TensorLayout.createCLayout()
+    TensorLayoutC = TensorLayout.createCLayout(desc.descD.extent, (DMStridesIndices, DNStridesIndices), isDStoreStrided)
     TensorLayoutD = TensorLayout.createDLayout(desc.descD.extent, (DMStridesIndices, DNStridesIndices), isDStoreStrided)
 
     return (

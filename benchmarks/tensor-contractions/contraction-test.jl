@@ -9,6 +9,9 @@ function main()
     jsonData = JSON.parse(read(fp, String))
 
     for el in jsonData
+        if (el["name"] != "ABC-DCA-BD")
+            continue
+        end
         parseableName = el["parseableName"]
 
         tensorModes = Vector{Vector{Int}}(undef, 0)
@@ -34,7 +37,8 @@ end
 
 function test(extents, tensorModes)
     A = CuArray(rand(Float16, extents[tensorModes[2]]) / sqrt(Float16(2048)))
-    B = CuArray(rand(Float16, extents[tensorModes[3]])) / sqrt(Float16(2048))
+    B = CuArray(rand(Float16, extents[tensorModes[3]]) / sqrt(Float16(2048)))
+    C = CuArray(rand(Float16, extents[tensorModes[1]]))
     D = CuArray(zeros(Float16, extents[tensorModes[1]]))
 
     plan = TensorPlan.ContractionPlan(
@@ -45,11 +49,11 @@ function test(extents, tensorModes)
     )
     # @show plan.TensorLayoutA
 
-    TensorPlan.contraction!(plan, Float16(1.0), A, B, Float16(0.0), D, D)
+    TensorPlan.contraction!(plan, Float16(1.0), A, B, Float16(1.0), C, D)
     D1 = Array(D)
 
     # CUTENSOR
-    algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT
+    algo = CUDA.CUTENSOR.CUTENSOR_ALGO_GETT
 
     plan = CUDA.CUTENSOR.plan_contraction(
         A, tensorModes[2], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
@@ -64,13 +68,15 @@ function test(extents, tensorModes)
         1,
         A, tensorModes[2], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
         B, tensorModes[3], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-        0,
-        D, tensorModes[1], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+        1,
+        C, tensorModes[1], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
         CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
         compute_type = Float16,
         plan = plan
     )
-    D2 = Array(D)
+    D2 = Array(C)
 
     display(@test all(isapprox.(Array(D1), Array(D2); rtol = sqrt(eps(Float16)))))
 end
+
+isinteractive() || main()

@@ -209,15 +209,50 @@ function createBLayout(
     return TensorLayoutB
 end
 
-# TODO: Add non-zero variant
-function createCLayout()
+function createCLayout(
+    T_strides_sizes::Vector{Int},
+    T_strides::Tuple{Vector{Int}, Vector{Int}},
+    is_load_or_store_strided::Bool,
+    load_or_store_strided_over::Union{Vector{Int}, Nothing} = nothing,
+)
+    (
+        TM_strides, TN_strides,
+        TM_div, TN_div,
+        T_mod,
+        GM_mul, GN_mul,
+        is_load_strided, strided_over_size
+    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_or_store_strided, load_or_store_strided_over)
+
     @eval abstract type TensorLayoutC{T} <: Layout.AlignedColMajor{T} end
 
     @eval @inline function Layout.load(::Type{TensorLayoutC{T}}, workspace, tile::Tile{size}) where {T, size}
-        N = 16 ÷ sizeof(T)
+        NUMEL = 16 ÷ sizeof(T)
 
-        ntuple(Val(N)) do i
-            VecElement{T}(zero(T))
+        M = tile.base.M + tile.offset.M
+        N = tile.base.N + tile.offset.N
+
+        offset = 1
+
+        i = 1
+        @unroll for TM_stride in $TM_strides
+            stride_offset = (M ÷ ($TM_div)[i]) % ($T_mod)[TM_stride]
+
+            offset += stride_offset * ($GM_mul)[i]
+            i += 1
+        end
+
+        i = 1
+        @unroll for TN_stride in $TN_strides
+            stride_offset = (N ÷ ($TN_div)[i]) % ($T_mod)[TN_stride]
+
+            offset += stride_offset * ($GN_mul)[i]
+            i += 1
+        end
+
+        if ($is_load_strided == false)
+            return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+        else
+            return TensorLayout.sloada(Layout.Vec{NUMEL, T}, workspace, offset, $strided_over_size)
         end
     end
 
