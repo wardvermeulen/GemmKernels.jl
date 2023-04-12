@@ -24,7 +24,7 @@ function main()
 
         extents = Tuple(x for x in el["extents"])
 
-        println(el["name"])
+        print(el["name"], " ")
         
         test(extents, tensorModes)
     end
@@ -43,7 +43,7 @@ function test(extents, tensorModes)
         D, tensorModes[1],
         D, tensorModes[1],
     )
-    @show plan.TensorLayoutA
+    # @show plan.TensorLayoutA
 
     TensorPlan.contraction!(plan, Float16(1.0), A, B, Float16(0.0), D, D)
     D1 = Array(D)

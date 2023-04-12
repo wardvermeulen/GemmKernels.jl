@@ -201,8 +201,373 @@
         ]
     },
     {
+        "name": "ABCD-AEBF-DFCE",
+        "parseableName": "1.2.3.4-1.5.2.6-4.6.3.5",
+        "extents": [
+            64,
+            32,
+            64,
+            32,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-AEBF-FDEC",
+        "parseableName": "1.2.3.4-1.5.2.6-6.4.5.3",
+        "extents": [
+            64,
+            32,
+            64,
+            32,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-AECF-BFDE",
+        "parseableName": "1.2.3.4-1.5.3.6-2.6.4.5",
+        "extents": [
+            64,
+            32,
+            32,
+            64,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-AECF-FBED",
+        "parseableName": "1.2.3.4-1.5.3.6-6.2.5.4",
+        "extents": [
+            64,
+            64,
+            32,
+            32,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-AEDF-BFCE",
+        "parseableName": "1.2.3.4-1.5.4.6-2.6.3.5",
+        "extents": [
+            64,
+            32,
+            64,
+            32,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-AEDF-FBEC",
+        "parseableName": "1.2.3.4-1.5.4.6-6.2.5.3",
+        "extents": [
+            64,
+            32,
+            64,
+            32,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-AEFB-FDCE",
+        "parseableName": "1.2.3.4-1.5.6.2-6.4.3.5",
+        "extents": [
+            64,
+            32,
+            64,
+            32,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-AEFB-FDCE",
+        "parseableName": "1.2.3.4-1.5.6.2-6.4.3.5",
+        "extents": [
+            64,
+            32,
+            64,
+            32,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-AEFC-FBED",
+        "parseableName": "1.2.3.4-1.5.6.3-6.2.5.4",
+        "extents": [
+            64,
+            32,
+            32,
+            64,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-EAFB-FDEC",
+        "parseableName": "1.2.3.4-5.1.6.2-6.4.5.3",
+        "extents": [
+            64,
+            32,
+            64,
+            32,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-EAFC-BFDE",
+        "parseableName": "1.2.3.4-5.1.6.3-2.6.4.5",
+        "extents": [
+            64,
+            32,
+            32,
+            64,
+            32,
+            64
+        ]
+    },
+    {
+        "name": "ABCD-EAFD-FBEC",
+        "parseableName": "1.2.3.4-5.1.6.4-6.2.5.3",
+        "extents": [
+            64,
+            32,
+            64,
+            32,
+            32,
+            64
+        ]
+    },
+    {
         "name": "ABCDEF-DEGA-GFBC",
         "parseableName": "1.2.3.4.5.6-4.5.7.1-7.6.2.3",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-DEGB-GFAC",
+        "parseableName": "1.2.3.4.5.6-4.5.7.2-7.6.1.3",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            8,
+            16,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-DEGC-GFAB",
+        "parseableName": "1.2.3.4.5.6-4.5.7.3-7.6.1.2",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            8,
+            16,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-DFGA-GEBC",
+        "parseableName": "1.2.3.4.5.6-4.6.7.1-7.5.2.3",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            8,
+            16,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-DFGB-GEAC",
+        "parseableName": "1.2.3.4.5.6-4.6.7.2-7.5.1.3",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-DFGC-GEAB",
+        "parseableName": "1.2.3.4.5.6-4.6.7.3-7.5.1.2",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-EFGA-GDBC",
+        "parseableName": "1.2.3.4.5.6-5.6.7.1-7.4.2.3",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-EFGB-GDAC",
+        "parseableName": "1.2.3.4.5.6-5.6.7.2-7.4.1.3",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-EFGC-GDAB",
+        "parseableName": "1.2.3.4.5.6-5.6.7.3-7.4.1.2",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-GDAB-EFGC",
+        "parseableName": "1.2.3.4.5.6-7.4.1.2-5.6.7.3",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-GDAC-EFGB",
+        "parseableName": "1.2.3.4.5.6-7.4.1.3-5.6.7.2",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-GDBC-EFGA",
+        "parseableName": "1.2.3.4.5.6-7.4.2.3-5.6.7.1",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-GEAB-DFGC",
+        "parseableName": "1.2.3.4.5.6-7.5.1.2-4.6.7.3",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-GEAC-DFGB",
+        "parseableName": "1.2.3.4.5.6-7.5.1.3-4.6.7.2",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            16,
+            8,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-GEBC-DFGA",
+        "parseableName": "1.2.3.4.5.6-7.5.2.3-4.6.7.1",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            8,
+            16,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-GFAB-DEGC",
+        "parseableName": "1.2.3.4.5.6-7.6.1.2-4.5.7.3",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            8,
+            16,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-GFAC-DEGB",
+        "parseableName": "1.2.3.4.5.6-7.6.1.3-4.5.7.2",
+        "extents": [
+            8,
+            16,
+            16,
+            16,
+            8,
+            16,
+            2048
+        ]
+    },
+    {
+        "name": "ABCDEF-GFBC-DEGA",
+        "parseableName": "1.2.3.4.5.6-7.6.2.3-4.5.7.1",
         "extents": [
             8,
             16,

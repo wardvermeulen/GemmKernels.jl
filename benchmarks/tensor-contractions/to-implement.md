@@ -40,35 +40,34 @@
 - [x] abc-adec-bde (SVS)  <span style="color:red">NOT PART OF TCCG</span>
 
 # 4 x 4 x 4
-- [ ] abcd-aebf-dfce
-- [ ] abcd-aebf-fdec
-- [ ] abcd-aecf-bfde
-- [ ] abcd-aecf-fbed
-- [ ] abcd-aedf-bfce
-- [ ] abcd-aedf-fbec
-- [ ] abcd-aefb-fdce
-- [ ] abcd-aefc-fbed
-- [ ] abcd-eafb-fdec
-- [ ] abcd-eafc-bfde
-- [ ] abcd-eafd-fbec
+- [o] abcd-aebf-dfce
+- [o] abcd-aebf-fdec
+- [o] abcd-aecf-bfde
+- [o] abcd-aecf-fbed
+- [o] abcd-aedf-bfce
+- [o] abcd-aedf-fbec
+- [o] abcd-aefb-fdce
+- [o] abcd-aefc-fbed
+- [o] abcd-eafb-fdec
+- [o] abcd-eafc-bfde
+- [o] abcd-eafd-fbec
 
 # 5 x 4 x 5
 - [o] abcdef-dega-gfbc
-- [ ] abcdef-degb-gfac
-- [ ] abcdef-degc-gfab
-- [ ] abcdef-dfga-gebc
-- [ ] abcdef-dfgb-geac
-- [ ] abcdef-dfgc-geab
-- [ ] abcdef-efga-gdbc
-- [ ] abcdef-efgb-gdac
-- [ ] abcdef-efgc-gdab
-- [ ] abcdef-gdab-efgc
-- [ ] abcdef-gdac-efgb
-- [ ] abcdef-gdbc-efga
-- [ ] abcdef-geab-dfgc
-- [ ] abcdef-geac-dfgb
-- [ ] abcdef-geac-dfgb
-- [ ] abcdef-gebc-dfga
-- [ ] abcdef-gfab-degc
-- [ ] abcdef-gfac-degb
-- [ ] abcdef-gfbc-dega
+- [o] abcdef-degb-gfac
+- [o] abcdef-degc-gfab
+- [o] abcdef-dfga-gebc
+- [o] abcdef-dfgb-geac
+- [o] abcdef-dfgc-geab
+- [o] abcdef-efga-gdbc
+- [o] abcdef-efgb-gdac
+- [o] abcdef-efgc-gdab
+- [o] abcdef-gdab-efgc
+- [o] abcdef-gdac-efgb
+- [o] abcdef-gdbc-efga
+- [o] abcdef-geab-dfgc
+- [o] abcdef-geac-dfgb
+- [o] abcdef-gebc-dfga
+- [o] abcdef-gfab-degc
+- [o] abcdef-gfac-degb
+- [o] abcdef-gfbc-dega
