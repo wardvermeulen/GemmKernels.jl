@@ -124,22 +124,22 @@ mutable struct ContractionPlan
     function ContractionPlan(desc::ContractionDescriptor, algo::ALGO=ALGO_GETT)
         (
             gemmShape,
-            TensorLayoutA, isARowMajor,
-            TensorLayoutB, isBRowMajor,
+            TensorLayoutA, isAColMajor,
+            TensorLayoutB, isBColMajor,
             TensorLayoutC,
             TensorLayoutD,
         ) = createGETTContractionPlan(desc)
 
-        if (isARowMajor)
-            ASharedLayout = Layout.Padded{Layout.AlignedRowMajor{desc.descA.dataType}, 8}
-        else
+        if (isAColMajor)
             ASharedLayout = Layout.Padded{Layout.AlignedColMajor{desc.descA.dataType}, 8}
+        else
+            ASharedLayout = Layout.Padded{Layout.AlignedRowMajor{desc.descA.dataType}, 8}
         end
 
-        if (isBRowMajor)
-            BSharedLayout = Layout.Padded{Layout.AlignedRowMajor{desc.descB.dataType}, 8}
-        else
+        if (isBColMajor)
             BSharedLayout = Layout.Padded{Layout.AlignedColMajor{desc.descB.dataType}, 8}
+        else
+            BSharedLayout = Layout.Padded{Layout.AlignedRowMajor{desc.descB.dataType}, 8}
         end
 
         gemmConf = GemmKernels.get_config(
@@ -156,8 +156,8 @@ mutable struct ContractionPlan
             shared_c_layout = Layout.AlignedColMajor{desc.descC.dataType},
             shared_d_layout = Layout.AlignedColMajor{desc.descD.dataType},
 
-            is_a_col_major = !isARowMajor,
-            is_b_col_major = !isBRowMajor,
+            is_a_col_major = isAColMajor,
+            is_b_col_major = isBColMajor,
         )
 
         return new(
@@ -235,18 +235,54 @@ function createGETTContractionPlan(desc::ContractionDescriptor)
         append!(BKStridesIndices, findall(x -> x == stride, modeB))
     end
 
-    isARowMajor = false
+    isALoadStrided = false
     AStridedOver = Vector{Int}(undef, 0)
-    if !(1 in AMStridesIndices)
-        isARowMajor = true
-        append!(AStridedOver, 1 : AMStridesIndices[1] - 1)
+
+    isBLoadStrided = false
+    BStridedOver = Vector{Int}(undef, 0)
+
+    if (1 in AMStridesIndices)
+        isAColMajor = true
+    else
+        isAColMajor = false
     end
 
-    isBRowMajor = false
-    BStridedOver = Vector{Int}(undef, 0)
-    if !(1 in BKStridesIndices)
-        isBRowMajor = true
-        append!(BStridedOver, 1 : BKStridesIndices[1] - 1)
+    if (1 in BNStridesIndices)
+        isBColMajor = false
+    else
+        isBColMajor = true
+    end
+
+    if (1 in AKStridesIndices && isBColMajor == false)
+        newPerm = sortperm(AKStridesIndices)
+        AKStridesIndices = AKStridesIndices[newPerm]
+        BKStridesIndices = BKStridesIndices[newPerm]
+    end
+
+    if (1 in BKStridesIndices && isAColMajor == true)
+        newPerm = sortperm(BKStridesIndices)
+        AKStridesIndices = AKStridesIndices[newPerm]
+        BKStridesIndices = BKStridesIndices[newPerm]
+    end
+
+    if (1 in AKStridesIndices && 1 in BKStridesIndices)
+        if (desc.descA.extent[1] > desc.descB.extent[1])
+            newPerm = sortperm(AKStridesIndices)
+            AKStridesIndices = AKStridesIndices[newPerm]
+            BKStridesIndices = BKStridesIndices[newPerm]
+
+            isBLoadStrided = true
+            isBColMajor = false
+            append!(BStridedOver, 1 : BKStridesIndices[1] - 1)
+        else
+            newPerm = sortperm(BKStridesIndices)
+            AKStridesIndices = AKStridesIndices[newPerm]
+            BKStridesIndices = BKStridesIndices[newPerm]
+
+            isALoadStrided = true
+            isAColMajor = true
+            append!(AStridedOver, 1 : AMStridesIndices[1] - 1)
+        end
     end
 
     DMStridesIndices = Vector{Int}(undef, 0)
@@ -267,19 +303,18 @@ function createGETTContractionPlan(desc::ContractionDescriptor)
         K = prod(desc.descA.extent[AKStridesIndices]),
     )
 
-    TensorLayoutA = TensorLayout.createALayout(desc.descA.extent, (AMStridesIndices, AKStridesIndices), isARowMajor, AStridedOver)
-    TensorLayoutB = TensorLayout.createBLayout(desc.descB.extent, (BKStridesIndices, BNStridesIndices), isBRowMajor, BStridedOver)
+    TensorLayoutA = TensorLayout.createALayout(desc.descA.extent, (AMStridesIndices, AKStridesIndices), isAColMajor, isALoadStrided, AStridedOver)
+    TensorLayoutB = TensorLayout.createBLayout(desc.descB.extent, (BKStridesIndices, BNStridesIndices), isBColMajor, isBLoadStrided, BStridedOver)
     TensorLayoutC = TensorLayout.createCLayout(desc.descD.extent, (DMStridesIndices, DNStridesIndices), isDStoreStrided)
     TensorLayoutD = TensorLayout.createDLayout(desc.descD.extent, (DMStridesIndices, DNStridesIndices), isDStoreStrided)
 
     return (
         gemmShape,
-        TensorLayoutA, isARowMajor,
-        TensorLayoutB, isBRowMajor,
+        TensorLayoutA, isAColMajor,
+        TensorLayoutB, isBColMajor,
         TensorLayoutC,
         TensorLayoutD,
     )
-
 end
 
 

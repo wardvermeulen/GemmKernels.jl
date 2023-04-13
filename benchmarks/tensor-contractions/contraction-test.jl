@@ -8,10 +8,15 @@ function main()
 
     jsonData = JSON.parse(read(fp, String))
 
-    i = 0
     for el in jsonData
-        # if (el["name"] != "ABC-BDA-DC")
+        # if (el["name"] != "ABC-DCA-BD" && el["name"] != "AB-CAD-DCB")
         #     continue
+        # end
+        # if (el["name"] == "AB-CAD-DCB")
+        #     continue
+        # end
+        # if (el["name"] == "ABCD-EAFB-FBEC")
+        #     break
         # end
         parseableName = el["parseableName"]
 
@@ -28,14 +33,9 @@ function main()
 
         extents = Tuple(x for x in el["extents"])
 
-        print(el["name"], " ")
+        print(el["name"], " \n")
         
         test(extents, tensorModes)
-
-        i += 1
-        if i == 5
-            break
-        end
     end
 
     nothing

@@ -110,7 +110,8 @@ end
 function createALayout(
     T_strides_sizes::Vector{Int},
     T_strides::Tuple{Vector{Int}, Vector{Int}},
-    is_row_major::Bool,
+    is_col_major::Bool,
+    is_load_strided::Bool,
     load_or_store_strided_over::Union{Vector{Int}, Nothing} = nothing,
 )
     (
@@ -118,12 +119,12 @@ function createALayout(
         TM_div, TK_div,
         T_mod,
         GM_mul, GK_mul,
-        is_row_major, _
-    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_row_major, load_or_store_strided_over)
+        is_load_strided, strided_over_size
+    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_strided, load_or_store_strided_over)
 
     layoutId = rand(1:100000)
 
-    if (is_row_major == false)
+    if (is_col_major == true)
         @eval abstract type ($(Symbol("TensorLayoutA$layoutId"))){T} <: Layout.AlignedColMajor{T} end
     else
         @eval abstract type ($(Symbol("TensorLayoutA$layoutId"))){T} <: Layout.AlignedRowMajor{T} end
@@ -153,7 +154,11 @@ function createALayout(
             i += 1
         end
 
-        return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+        if ($is_load_strided == false)
+            return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+        else
+            return TensorLayout.sloada(Layout.Vec{NUMEL, T}, workspace, offset, $strided_over_size)
+        end
     end
 
     return @eval ($(Symbol("TensorLayoutA$layoutId")))
@@ -162,7 +167,8 @@ end
 function createBLayout(
     T_strides_sizes::Vector{Int},
     T_strides::Tuple{Vector{Int}, Vector{Int}},
-    is_row_major::Bool,
+    is_col_major::Bool,
+    is_load_strided::Bool,
     load_or_store_strided_over::Union{Vector{Int}, Nothing} = nothing,
 )
     (
@@ -170,12 +176,12 @@ function createBLayout(
         TK_div, TN_div,
         T_mod,
         GK_mul, GN_mul,
-        is_row_major, strided_over_size
-    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_row_major, load_or_store_strided_over)
+        is_load_strided, strided_over_size
+    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_strided, load_or_store_strided_over)
 
     layoutId = rand(1:100000)
 
-    if (is_row_major == false)
+    if (is_col_major == true)
         @eval abstract type ($(Symbol("TensorLayoutB$layoutId"))){T} <: Layout.AlignedColMajor{T} end
     else
         @eval abstract type ($(Symbol("TensorLayoutB$layoutId"))){T} <: Layout.AlignedRowMajor{T} end
@@ -205,7 +211,11 @@ function createBLayout(
             i += 1
         end
 
-        return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+        if ($is_load_strided == false)
+            return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+        else
+            return TensorLayout.sloada(Layout.Vec{NUMEL, T}, workspace, offset, $strided_over_size)
+        end
     end
 
     return @eval ($(Symbol("TensorLayoutB$layoutId")))

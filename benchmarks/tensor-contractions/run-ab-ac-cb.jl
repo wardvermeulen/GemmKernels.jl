@@ -10,7 +10,7 @@ using Test
 using Statistics
 using Printf
 
-# TCCG benchmark 1: D_abc = A_bda * B_dc
+# TCCG benchmark 1: D_ab = A_ac * B_cb
 
 test_or_bench::Bool = false
 if (size(ARGS, 1) == 1)
@@ -20,49 +20,18 @@ end
 # using CUDA; SA = 64; SB = 32; SC = 2048; SD = 2048; A = CuArray(rand(Float16, (SB, SD, SA))); B = CuArray(rand(Float16, (SD, SC))); D = CuArray(zeros(Float16, (SA, SB, SC)));
 
 # sizes for each dimension
-SA = 64
-SB = 32
+SA = 2048
+SB = 2048
 SC = 2048
-SD = 2048
 
-A = CuArray(rand(Float16, (SB, SD, SA)))
-B = CuArray(rand(Float16, (SD, SC)))
+A = CuArray(rand(Float16, (SA, SC)))
+B = CuArray(rand(Float16, (SC, SB)))
 
 # layout for the A tensor
 abstract type LayoutA{T} <: Layout.AlignedColMajor{T} end
 
-@inline function Layout.load(::Type{LayoutA{T}}, workspace, tile::Tile{size}) where {T, size}
-    NUMEL = 16 ÷ sizeof(T)
-
-    M = tile.base.M + tile.offset.M
-    K = tile.base.K + tile.offset.K
-
-    d = K
-
-    a = M ÷ Base.size(workspace, 1)
-    b = M % Base.size(workspace, 1)
-
-    offset = 1 + b + d * Base.size(workspace, 1) + a * Base.size(workspace, 1) * Base.size(workspace, 2)
-
-    Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
-end
-
 # layout for the B tensor
 abstract type LayoutB{T} <: Layout.AlignedColMajor{T} end
-
-@inline function Layout.load(::Type{LayoutB{T}}, workspace, tile::Tile{size}) where {T, size}
-    NUMEL = 16 ÷ sizeof(T)
-
-    K = tile.base.K + tile.offset.K
-    N = tile.base.N + tile.offset.N
-
-    d = K
-    c = N
-
-    offset = 1 + d + c * Base.size(workspace, 1)
-
-    Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
-end
 
 # layout for the C tensor
 abstract type LayoutC{T} <: Layout.AlignedColMajor{T} end
@@ -78,29 +47,13 @@ end
 # layout for the D tensor
 abstract type LayoutD{T} <: Layout.AlignedColMajor{T} end
 
-@inline function Layout.store!(::Type{LayoutD{T}}, workspace, value, tile::Tile{size}) where {T, size}
-    NUMEL = 16 ÷ sizeof(T)
-
-    for i = 1 : NUMEL
-        M = tile.base.M + tile.offset.M
-        N = tile.base.N + tile.offset.N
-
-        c = N
-
-        a = (M + i - 1) ÷ Base.size(workspace, 2)
-        b = (M + i - 1) % Base.size(workspace, 2)
-
-        @inbounds workspace[a + 1, b + 1, c + 1] = value[i].value
-    end
-end
-
 # implementation using GemmKernels.jl
 function gemmkernels_impl(;benchmark = false)
-    D = CuArray(zeros(Float16, (SA, SB, SC)))
+    D = CuArray(zeros(Float16, (SA, SB)))
 
-    M = SA * SB
+    M = SA 
     N = SC
-    K = SD
+    K = SB
 
     conf = GemmKernels.get_config(
                                   gemm_shape = (M = M, N = N, K = K),
@@ -143,18 +96,16 @@ function gemmkernels_impl(;benchmark = false)
 end
 
 function gettcontractions_impl(;benchmark = false)
-    D = CuArray(zeros(Float16, (SA, SB, SC)))
+    D = CuArray(zeros(Float16, (SA, SB)))
     
     # D[A, B, C] = 1 * A[B, D, A] * B[D, C] + 0 * D[A, B, C]
 
     plan = TensorPlan.ContractionPlan(
-        A, ['b', 'd', 'a'], 
-        B, ['d', 'c'], 
-        D, ['a', 'b', 'c'], 
-        D, ['a', 'b', 'c']
+        A, ['a', 'c'], 
+        B, ['c', 'b'], 
+        D, ['a', 'b'], 
+        D, ['a', 'b']
     )
-
-    # TensorPlan.contraction!(plan, Float16(1.0), A, B, Float16(0.0), D, D)
 
     if !benchmark
         TensorPlan.contraction!(plan, Float16(1.0), A, B, Float16(0.0), D, D)
@@ -174,11 +125,11 @@ end
 
 # cuTENSOR implementation
 function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = false)
-    D = CuArray(zeros(Float16, (SA, SB, SC)))
+    D = CuArray(zeros(Float16, (SA, SB)))
 
-    plan = CUDA.CUTENSOR.plan_contraction(A, [ 'b', 'd', 'a' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-                                          B, [ 'd', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-                                          D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+    plan = CUDA.CUTENSOR.plan_contraction(A, [ 'a', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                          B, [ 'c', 'b' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                          D, [ 'a', 'b' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                           CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                           algo = algo,
                                           compute_type = Float16)
@@ -187,10 +138,10 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
 
     if !benchmark
         CUDA.CUTENSOR.contraction!(1,
-                                A, [ 'b', 'd', 'a' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-                                B, [ 'd', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                A, [ 'a', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                B, [ 'c', 'b' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                 0,
-                                D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                D, [ 'a', 'b' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                 CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                 compute_type = Float16,
                                 plan = plan)
@@ -201,10 +152,10 @@ function cutensor_impl(;algo = CUDA.CUTENSOR.CUTENSOR_ALGO_DEFAULT, benchmark = 
         for i = 1 : 10000
             synchronize(context())
             time = CUDA.@elapsed CUDA.CUTENSOR.contraction!(1,
-                                    A, [ 'b', 'd', 'a' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-                                    B, [ 'd', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                    A, [ 'a', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                    B, [ 'c', 'b' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                     0,
-                                    D, [ 'a', 'b', 'c' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
+                                    D, [ 'a', 'b' ], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                     CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                                     compute_type = Float16,
                                     plan = plan)
