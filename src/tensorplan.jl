@@ -265,7 +265,7 @@ function createGETTContractionPlan(desc::ContractionDescriptor)
         BKStridesIndices = BKStridesIndices[newPerm]
     end
 
-    if (1 in AKStridesIndices && 1 in BKStridesIndices)
+    if (1 in AKStridesIndices && 1 in BKStridesIndices && length(AKStridesIndices) > 1)
         if (desc.descA.extent[1] > desc.descB.extent[1])
             newPerm = sortperm(AKStridesIndices)
             AKStridesIndices = AKStridesIndices[newPerm]
