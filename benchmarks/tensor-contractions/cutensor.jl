@@ -7,7 +7,7 @@ extents = eval(Meta.parse(ARGS[2]))
 
 A = CuArray(rand(Float16, extents[modes[2]]) / sqrt(Float16(2048)))
 B = CuArray(rand(Float16, extents[modes[3]]) / sqrt(Float16(2048)))
-D = CuArray(zeros(Float16, extents[modes[1]]))
+D = CuArray(rand(Float16, extents[modes[1]]))
 
 algo = CUDA.CUTENSOR.CUTENSOR_ALGO_GETT
 
@@ -24,7 +24,7 @@ CUDA.CUTENSOR.contraction!(
     1,
     A, modes[2], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
     B, modes[3], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-    0,
+    1,
     D, modes[1], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
     CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
     compute_type = Float16,
@@ -38,7 +38,7 @@ CUDA.@profile begin
                 1,
                 A, modes[2], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                 B, modes[3], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-                0,
+                1,
                 D, modes[1], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                 CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
                 compute_type = Float16,

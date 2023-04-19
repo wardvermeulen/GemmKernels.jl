@@ -12,6 +12,80 @@ using KernelAbstractions.Extras: @unroll
     end
 end
 
+@inline function sstorea!(::Type{Layout.Vec{NUMEL, T}}, workspace, val, offset::Int, strided_over_size::Int) where {NUMEL, T}
+    for i in 1 : NUMEL
+        @inbounds workspace[offset + (i - 1) * strided_over_size] = val[i].value
+    end
+end
+
+abstract type TensorLayoutColMajor{T, TM_strides, TM_div, GM_mul, TK_strides, TK_div, GK_mul, T_mod, is_load_strided, strided_over_size} <: Layout.AlignedColMajor{T} end
+
+abstract type TensorLayoutRowMajor{T, TM_strides, TM_div, GM_mul, TK_strides, TK_div, GK_mul, T_mod, is_load_strided, strided_over_size} <: Layout.AlignedRowMajor{T} end
+
+@inline function Layout.load(
+        ::Union{
+            Type{TensorLayoutColMajor{T, TM_strides, TM_div, GM_mul, TK_strides, TK_div, GK_mul, T_mod, is_load_strided, strided_over_size}},
+            Type{TensorLayoutRowMajor{T, TM_strides, TM_div, GM_mul, TK_strides, TK_div, GK_mul, T_mod, is_load_strided, strided_over_size}}
+        }, workspace, tile::Tile{size}
+    ) where {T, TM_strides, TM_div, GM_mul, TK_strides, TK_div, GK_mul, T_mod, is_load_strided, strided_over_size, size}
+
+    NUMEL = 16 ÷ sizeof(T)
+
+    M = tile.base[1] + tile.offset[1]
+    K = tile.base[2] + tile.offset[2]
+
+    offset = 1
+
+    @unroll for i in eachindex(TM_strides)
+        stride_offset = (M ÷ TM_div[i]) % T_mod[TM_strides[i]]
+        offset += stride_offset * GM_mul[i]
+    end
+
+    @unroll for i in eachindex(TK_strides)
+        stride_offset = (K ÷ TK_div[i]) % T_mod[TK_strides[i]]
+        offset += stride_offset * GK_mul[i]
+    end
+
+    if (is_load_strided == false)
+        return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
+    else
+        return TensorLayout.sloada(Layout.Vec{NUMEL, T}, workspace, offset, strided_over_size)
+    end
+end
+
+@inline function Layout.store!(
+        ::Union{
+            Type{TensorLayoutColMajor{T, TM_strides, TM_div, GM_mul, TN_strides, TN_div, GN_mul, T_mod, is_store_strided, strided_over_size}},
+            Type{TensorLayoutRowMajor{T, TM_strides, TM_div, GM_mul, TN_strides, TN_div, GN_mul, T_mod, is_store_strided, strided_over_size}}
+        }, workspace, value, tile::Tile{size}
+    ) where {T, TM_strides, TM_div, GM_mul, TN_strides, TN_div, GN_mul, T_mod, is_store_strided, strided_over_size, size}
+
+    NUMEL = 16 ÷ sizeof(T)
+
+    M = tile.base.M + tile.offset.M
+    N = tile.base.N + tile.offset.N
+
+    offset = 1
+
+    @unroll for i in eachindex(TM_strides)
+        stride_offset = (M ÷ TM_div[i]) % T_mod[TM_strides[i]]
+        offset += stride_offset * GM_mul[i]
+    end
+
+    @unroll for i in eachindex(TN_strides)
+        stride_offset = (N ÷ TN_div[i]) % T_mod[TN_strides[i]]
+
+        offset += stride_offset * GN_mul[i]
+    end
+
+    if (is_store_strided == false)
+        return Layout.vstorea!(Layout.Vec{NUMEL, T}, pointer(workspace), value, offset)
+    else
+        TensorLayout.sstorea!(Layout.Vec{NUMEL, T}, workspace, value, offset, strided_over_size)
+    end
+end
+
+
 # TODO: Write test. One example given below.
 # precomputeGETTLayoutConstants([16, 512, 32], ([1, 3], [2]))
 # result: ((1, 3), (2,), (1, 16), (1,), (16, 512, 32), (1, 8192), (16,))
@@ -108,6 +182,7 @@ function precomputeGETTLayoutConstants(
 end
 
 function createALayout(
+    T::DataType,
     T_strides_sizes::Vector{Int},
     T_strides::Tuple{Vector{Int}, Vector{Int}},
     is_col_major::Bool,
@@ -122,49 +197,15 @@ function createALayout(
         is_load_strided, strided_over_size
     ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_strided, load_or_store_strided_over)
 
-    layoutId = rand(1:100000)
-
     if (is_col_major == true)
-        @eval abstract type ($(Symbol("TensorLayoutA$layoutId"))){T} <: Layout.AlignedColMajor{T} end
+        return TensorLayoutColMajor{T, TM_strides, TM_div, GM_mul, TK_strides, TK_div, GK_mul, T_mod, is_load_strided, strided_over_size}
     else
-        @eval abstract type ($(Symbol("TensorLayoutA$layoutId"))){T} <: Layout.AlignedRowMajor{T} end
+        return TensorLayoutRowMajor{T, TM_strides, TM_div, GM_mul, TK_strides, TK_div, GK_mul, T_mod, is_load_strided, strided_over_size}
     end
-
-    @eval @inline function Layout.load(::Type{($(Symbol("TensorLayoutA$layoutId"))){T}}, workspace, tile::Tile{size}) where {T, size}
-        NUMEL = 16 ÷ sizeof(T)
-
-        M = tile.base.M + tile.offset.M
-        K = tile.base.K + tile.offset.K
-
-        offset = 1
-
-        i = 1
-        @unroll for TM_stride in $TM_strides
-            stride_offset = (M ÷ ($TM_div)[i]) % ($T_mod)[TM_stride]
-
-            offset += stride_offset * ($GM_mul)[i]
-            i += 1
-        end
-
-        i = 1
-        @unroll for TK_stride in $TK_strides
-            stride_offset = (K ÷ ($TK_div)[i]) % ($T_mod)[TK_stride]
-
-            offset += stride_offset * ($GK_mul)[i]
-            i += 1
-        end
-
-        if ($is_load_strided == false)
-            return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
-        else
-            return TensorLayout.sloada(Layout.Vec{NUMEL, T}, workspace, offset, $strided_over_size)
-        end
-    end
-
-    return @eval ($(Symbol("TensorLayoutA$layoutId")))
 end
 
 function createBLayout(
+    T::DataType,
     T_strides_sizes::Vector{Int},
     T_strides::Tuple{Vector{Int}, Vector{Int}},
     is_col_major::Bool,
@@ -179,103 +220,39 @@ function createBLayout(
         is_load_strided, strided_over_size
     ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_strided, load_or_store_strided_over)
 
-    layoutId = rand(1:100000)
-
     if (is_col_major == true)
-        @eval abstract type ($(Symbol("TensorLayoutB$layoutId"))){T} <: Layout.AlignedColMajor{T} end
+        return TensorLayoutColMajor{T, TK_strides, TK_div, GK_mul, TN_strides, TN_div, GN_mul, T_mod, is_load_strided, strided_over_size}
     else
-        @eval abstract type ($(Symbol("TensorLayoutB$layoutId"))){T} <: Layout.AlignedRowMajor{T} end
+        return TensorLayoutRowMajor{T, TK_strides, TK_div, GK_mul, TN_strides, TN_div, GN_mul, T_mod, is_load_strided, strided_over_size}
     end
-
-    @eval @inline function Layout.load(::Type{($(Symbol("TensorLayoutB$layoutId"))){T}}, workspace, tile::Tile{size}) where {T, size}
-        NUMEL = 16 ÷ sizeof(T)
-
-        K = tile.base.K + tile.offset.K
-        N = tile.base.N + tile.offset.N
-
-        offset = 1
-
-        i = 1
-        @unroll for TK_stride in $TK_strides
-            stride_offset = (K ÷ ($TK_div)[i]) % ($T_mod)[TK_stride]
-
-            offset += stride_offset * ($GK_mul)[i]
-            i += 1
-        end
-
-        i = 1
-        @unroll for TN_stride in $TN_strides
-            stride_offset = (N ÷ ($TN_div)[i]) % ($T_mod)[TN_stride]
-
-            offset += stride_offset * ($GN_mul)[i]
-            i += 1
-        end
-
-        if ($is_load_strided == false)
-            return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
-        else
-            return TensorLayout.sloada(Layout.Vec{NUMEL, T}, workspace, offset, $strided_over_size)
-        end
-    end
-
-    return @eval ($(Symbol("TensorLayoutB$layoutId")))
 end
 
 function createCLayout(
+    T::DataType,
     T_strides_sizes::Vector{Int},
     T_strides::Tuple{Vector{Int}, Vector{Int}},
-    is_load_or_store_strided::Bool,
+    is_load_strided::Bool,
     load_or_store_strided_over::Union{Vector{Int}, Nothing} = nothing,
 )
+
     (
         TM_strides, TN_strides,
         TM_div, TN_div,
         T_mod,
         GM_mul, GN_mul,
         is_load_strided, strided_over_size
-    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_or_store_strided, load_or_store_strided_over)
+    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_strided, load_or_store_strided_over)
 
-    @eval abstract type TensorLayoutC{T} <: Layout.AlignedColMajor{T} end
-
-    @eval @inline function Layout.load(::Type{TensorLayoutC{T}}, workspace, tile::Tile{size}) where {T, size}
-        NUMEL = 16 ÷ sizeof(T)
-
-        M = tile.base.M + tile.offset.M
-        N = tile.base.N + tile.offset.N
-
-        offset = 1
-
-        i = 1
-        @unroll for TM_stride in $TM_strides
-            stride_offset = (M ÷ ($TM_div)[i]) % ($T_mod)[TM_stride]
-
-            offset += stride_offset * ($GM_mul)[i]
-            i += 1
-        end
-
-        i = 1
-        @unroll for TN_stride in $TN_strides
-            stride_offset = (N ÷ ($TN_div)[i]) % ($T_mod)[TN_stride]
-
-            offset += stride_offset * ($GN_mul)[i]
-            i += 1
-        end
-
-        if ($is_load_strided == false)
-            return Layout.vloada(Layout.Vec{NUMEL, T}, pointer(workspace), offset)
-        else
-            return TensorLayout.sloada(Layout.Vec{NUMEL, T}, workspace, offset, $strided_over_size)
-        end
-    end
-
-    return TensorLayoutC
+    # TODO: Add RowMajor support (goes along with attempt at more vectorised C loads and D stores)
+    return TensorLayoutColMajor{T, TM_strides, TM_div, GM_mul, TN_strides, TN_div, GN_mul, T_mod, is_load_strided, strided_over_size}
 end
 
 # TODO: Make this also use the strided_over contant. It will probably be more efficient.
 function createDLayout(
+    T::DataType,
     T_strides_sizes::Vector{Int},
     T_strides::Tuple{Vector{Int}, Vector{Int}},
-    is_load_or_store_strided::Bool,
+    is_store_strided::Bool,
     load_or_store_strided_over::Union{Vector{Int}, Nothing} = nothing,
 )
     (
@@ -284,62 +261,9 @@ function createDLayout(
         T_mod,
         GM_mul, GN_mul,
         is_store_strided, strided_over_size
-    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_load_or_store_strided, load_or_store_strided_over)
-    
-    @eval abstract type TensorLayoutD{T} <: Layout.AlignedColMajor{T} end
+    ) = precomputeGETTLayoutConstants(T_strides_sizes, T_strides, is_store_strided, load_or_store_strided_over)
 
-    @eval @inline function Layout.store!(::Type{TensorLayoutD{T}}, workspace, value, tile::Tile{size}) where {T, size}
-        NUMEL = 16 ÷ sizeof(T)
-
-        M = tile.base.M + tile.offset.M
-        N = tile.base.N + tile.offset.N
-
-        if ($is_store_strided == false)
-            offset = 1
-
-            j = 1
-            @unroll for TM_stride in $TM_strides
-                stride_offset = (M ÷ ($TM_div)[j]) % ($T_mod)[TM_stride]
-
-                offset += stride_offset * ($GM_mul)[j]
-                j += 1
-            end
-
-            j = 1
-            @unroll for TN_stride in $TN_strides
-                stride_offset = (N ÷ ($TN_div)[j]) % ($T_mod)[TN_stride]
-
-                offset += stride_offset * ($GN_mul)[j]
-                j += 1
-            end
-
-            return Layout.vstorea!(Layout.Vec{NUMEL, T}, pointer(workspace), value, offset)
-        end
-    
-        for i = 1 : NUMEL
-            offset = 1
-
-            j = 1
-            @unroll for TM_stride in $TM_strides
-                stride_offset = ((M + i - 1) ÷ ($TM_div)[j]) % ($T_mod)[TM_stride]
-
-                offset += stride_offset * ($GM_mul)[j]
-                j += 1
-            end
-
-            j = 1
-            @unroll for TN_stride in $TN_strides
-                stride_offset = (N ÷ ($TN_div)[j]) % ($T_mod)[TN_stride]
-
-                offset += stride_offset * ($GN_mul)[j]
-                j += 1
-            end
-
-            @inbounds workspace[offset] = value[i].value
-        end
-    end
-
-    return TensorLayoutD
+    return TensorLayoutColMajor{T, TM_strides, TM_div, GM_mul, TN_strides, TN_div, GN_mul, T_mod, is_store_strided, strided_over_size}
 end
 
 end

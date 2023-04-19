@@ -124,7 +124,7 @@ mutable struct ContractionPlan
     function ContractionPlan(desc::ContractionDescriptor, algo::ALGO=ALGO_GETT)
         (
             gemmShape,
-            TensorLayoutA, isAColMajor,
+            TensorLayoutA, isAColMajor, 
             TensorLayoutB, isBColMajor,
             TensorLayoutC,
             TensorLayoutD,
@@ -146,10 +146,10 @@ mutable struct ContractionPlan
             gemm_shape = gemmShape,
             operator = Operator.WMMAOp{16, 16, 16, desc.computeType},
 
-            global_a_layout = TensorLayoutA{desc.descA.dataType},
-            global_b_layout = TensorLayoutB{desc.descB.dataType},
-            global_c_layout = TensorLayoutC{desc.descC.dataType},
-            global_d_layout = TensorLayoutD{desc.descD.dataType},
+            global_a_layout = TensorLayoutA,
+            global_b_layout = TensorLayoutB,
+            global_c_layout = TensorLayoutC,
+            global_d_layout = TensorLayoutD,
 
             shared_a_layout = ASharedLayout,
             shared_b_layout = BSharedLayout,
@@ -296,6 +296,11 @@ function createGETTContractionPlan(desc::ContractionDescriptor)
     end
 
     isDStoreStrided = (vcat(DMStridesIndices, DNStridesIndices) != 1:length(modeD))
+    DStridedOver = Vector{Int}(undef, 0)
+
+    if (isDStoreStrided == true)
+        append!(DStridedOver, 1 : DMStridesIndices[1] - 1)
+    end
 
     gemmShape = (
         M = prod(desc.descA.extent[AMStridesIndices]),
@@ -303,14 +308,14 @@ function createGETTContractionPlan(desc::ContractionDescriptor)
         K = prod(desc.descA.extent[AKStridesIndices]),
     )
 
-    TensorLayoutA = TensorLayout.createALayout(desc.descA.extent, (AMStridesIndices, AKStridesIndices), isAColMajor, isALoadStrided, AStridedOver)
-    TensorLayoutB = TensorLayout.createBLayout(desc.descB.extent, (BKStridesIndices, BNStridesIndices), isBColMajor, isBLoadStrided, BStridedOver)
-    TensorLayoutC = TensorLayout.createCLayout(desc.descD.extent, (DMStridesIndices, DNStridesIndices), isDStoreStrided)
-    TensorLayoutD = TensorLayout.createDLayout(desc.descD.extent, (DMStridesIndices, DNStridesIndices), isDStoreStrided)
+    TensorLayoutA = TensorLayout.createALayout(desc.descA.dataType, desc.descA.extent, (AMStridesIndices, AKStridesIndices), isAColMajor, isALoadStrided, AStridedOver)
+    TensorLayoutB = TensorLayout.createBLayout(desc.descB.dataType, desc.descB.extent, (BKStridesIndices, BNStridesIndices), isBColMajor, isBLoadStrided, BStridedOver)
+    TensorLayoutC = TensorLayout.createCLayout(desc.descC.dataType, desc.descD.extent, (DMStridesIndices, DNStridesIndices), isDStoreStrided, DStridedOver)
+    TensorLayoutD = TensorLayout.createDLayout(desc.descD.dataType, desc.descD.extent, (DMStridesIndices, DNStridesIndices), isDStoreStrided, DStridedOver)
 
     return (
         gemmShape,
-        TensorLayoutA, isAColMajor,
+        TensorLayoutA, isAColMajor, 
         TensorLayoutB, isBColMajor,
         TensorLayoutC,
         TensorLayoutD,

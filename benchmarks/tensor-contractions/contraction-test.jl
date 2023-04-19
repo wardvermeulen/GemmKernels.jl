@@ -33,7 +33,7 @@ function main()
 
         extents = Tuple(x for x in el["extents"])
 
-        print(el["name"], " \n")
+        print(el["name"], " ")
         
         test(extents, tensorModes)
     end
@@ -55,7 +55,7 @@ function test(extents, tensorModes)
     )
     # @show plan.TensorLayoutA
 
-    TensorPlan.contraction!(plan, Float16(1.0), A, B, Float16(0.0), C, D)
+    TensorPlan.contraction!(plan, Float16(1.0), A, B, Float16(1.0), C, D)
     D1 = Array(D)
 
     # CUTENSOR
@@ -74,7 +74,7 @@ function test(extents, tensorModes)
         1,
         A, tensorModes[2], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
         B, tensorModes[3], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
-        0,
+        1,
         C, tensorModes[1], CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
         CUDA.CUTENSOR.CUTENSOR_OP_IDENTITY,
         compute_type = Float16,
