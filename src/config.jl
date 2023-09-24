@@ -110,10 +110,27 @@ function get_config(; gemm_shape, operator, global_a_layout, global_c_layout, kw
     block_shape = get(params, :block_shape,
         heuristic_block_shape(shared_a_layout, shared_b_layout, shared_c_layout, shared_d_layout))
 
-    # 8 warps in a 4 x 2 arrangement usually works well
-    warps_per_block = get(params, :warps_per_block, 8)
+    # op_shape = Operator.shape(operator)
+    # # 8 warps in a 4 x 2 arrangement usually works well
+
+    # warps_per_block_default = 8
+    # compute_warp_default = (M = block_shape.M ÷ 4, N = block_shape.N ÷ 2, K = op_shape.K)
+
+    # if (block_shape.M ÷ op_shape.M) < 4 || (block_shape.N ÷ op_shape.N) < 2
+    #     compute_warp_default = (
+    #         M = block_shape.M ÷ min(block_shape.M ÷ op_shape.M, 4),
+    #         N = block_shape.N ÷ min(block_shape.N ÷ op_shape.N, 2),
+    #         K = op_shape.K
+    #     )        
+    #     warps_per_block_default = min(block_shape.M ÷ op_shape.M, 4) * min(block_shape.N ÷ op_shape.N, 2)
+    # end
+
+    # warps_per_block = get(params, :warps_per_block, warps_per_block_default)
+    # compute_warp = get(params, :compute_warp, compute_warp_default)
+
+    warps_per_block = get(params, :warps_per_block, 8) 
     op_shape = Operator.shape(operator)
-    compute_warp = get(params, :compute_warp,
+    compute_warp = get(params, :compute_warp, 
                        (M = block_shape.M ÷ 4, N = block_shape.N ÷ 2, K = op_shape.K))
 
     # Is the layout col-major or not? This is needed to find good values for mem_a_warp, mem_b_warp, etc.
