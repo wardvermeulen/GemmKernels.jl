@@ -83,12 +83,16 @@ function main()
         end
 
 
-        # TODO: fix warps_per_block and no_warps
+        # # TODO: fix warps_per_block and no_warps
         # if block_shape.M ÷ op_shape.M < 4 ||
         #    block_shape.N ÷ op_shape.N < 2 ||
         #    block_shape.K < 8
         #     return Inf
         # end
+
+        if block_shape.K < 8
+            return Inf
+        end
 
 
         # validate the block shape
@@ -105,7 +109,32 @@ function main()
         end
 
         compute_type = promote_type(eltype(A), eltype(B))
-        operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, compute_type, eltype(C)}
+
+        if OPERATOR_M * OPERATOR_N < 32
+            return Inf
+        end
+
+        if OPERATOR_M * OPERATOR_N == 32
+            operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, OPERATOR_M, OPERATOR_N, 1, compute_type, eltype(C)}
+        elseif OPERATOR_M >= 4 && OPERATOR_N >= 8
+            operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, 4, 8, 1, compute_type, eltype(C)}
+        elseif OPERATOR_M > OPERATOR_N 
+            too_large = OPERATOR_M * OPERATOR_N ÷ 32
+
+            if too_large <= OPERATOR_N
+                operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, OPERATOR_M, OPERATOR_N ÷ too_large, 1, compute_type, eltype(C)}
+            else
+                return Inf
+            end
+        else
+            too_large = OPERATOR_M * OPERATOR_N ÷ 32
+
+            if too_large <= OPERATOR_M
+                operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, OPERATOR_M ÷ too_large, OPERATOR_N, 1, compute_type, eltype(C)}
+            else
+                return Inf
+            end
+        end
 
         conf = GemmKernels.get_config(;
             gemm_shape = (; M, N, K), block_shape, operator,
