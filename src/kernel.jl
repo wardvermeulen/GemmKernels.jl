@@ -22,10 +22,6 @@ function matmul_singlestage(conf::GemmKernels.Config, a, b, c, d,
     warpId = (threadIdx().x - 1) ÷ 32 + 1
     laneId = (threadIdx().x - 1) % 32 + 1
 
-    if (laneId > 16)
-        return
-    end
-
     gemm_sz = Tile(conf.matmul_shape)
     block_tile = Tile(conf.block_shape)
 
@@ -33,7 +29,7 @@ function matmul_singlestage(conf::GemmKernels.Config, a, b, c, d,
     shmem_c = @inbounds CuDynamicSharedArray(Layout.eltype(conf.shared_c_layout), Layout.physical_size(conf.shared_c_layout, block_tile.MN.size))
 
     @loopinfo unroll for warp_tile = parallellise(block_tile.MN, Tile(conf.mem_cd_warp), warpId, conf.warps_per_block)
-        @loopinfo unroll for thread_tile = parallellise(warp_tile, Tile(conf.mem_cd_thread), laneId, 16)
+        @loopinfo unroll for thread_tile = parallellise(warp_tile, Tile(conf.mem_cd_thread), laneId, 32)
             x = @inbounds Layout.load(conf.global_c_layout, c, translate_base(thread_tile, (M = block_i, N = block_j)))
             x = transf_gl2sh_c(x, thread_tile)
             @inbounds Layout.store!(conf.shared_c_layout, shmem_c, x, thread_tile)
@@ -65,7 +61,7 @@ function matmul_singlestage(conf::GemmKernels.Config, a, b, c, d,
         if Layout.threadblock_condition(conf.global_a_layout, conf.global_b_layout, block_i, block_j, block_k, block_tile)
             # (3.1) Cooperatively load a block_shape.M x block_shape.K tile of A from global to shared memory within one threadblock
             @loopinfo unroll for warp_tile = parallellise(block_tile.MK, Tile(conf.mem_a_warp), warpId, conf.warps_per_block, conf.is_a_col_major)
-                @loopinfo unroll for thread_tile = parallellise(warp_tile, Tile(conf.mem_a_thread), laneId, 16, conf.is_a_col_major)
+                @loopinfo unroll for thread_tile = parallellise(warp_tile, Tile(conf.mem_a_thread), laneId, 32, conf.is_a_col_major)
                     x = @inbounds Layout.load(conf.global_a_layout, a, translate_base(thread_tile, (M = block_i, K = block_k)))
                     x = transf_gl2sh_a(x, thread_tile)
                     @inbounds Layout.store!(conf.shared_a_layout, shmem_a, x, thread_tile)
@@ -74,7 +70,7 @@ function matmul_singlestage(conf::GemmKernels.Config, a, b, c, d,
 
             # (3.2) Cooperatively load a block_shape.K x block_shape.N tile of B from global to shared memory within one threadblock
             @loopinfo unroll for warp_tile = parallellise(block_tile.KN, Tile(conf.mem_b_warp), warpId, conf.warps_per_block, conf.is_b_col_major)
-                @loopinfo unroll for thread_tile = parallellise(warp_tile, Tile(conf.mem_b_thread), laneId, 16, conf.is_b_col_major)
+                @loopinfo unroll for thread_tile = parallellise(warp_tile, Tile(conf.mem_b_thread), laneId, 32, conf.is_b_col_major)
                     x = @inbounds Layout.load(conf.global_b_layout, b, translate_base(thread_tile, (K = block_k, N = block_j)))
                     x = transf_gl2sh_b(x, thread_tile)
                     @inbounds Layout.store!(conf.shared_b_layout, shmem_b, x, thread_tile)
