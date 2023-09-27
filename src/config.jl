@@ -122,7 +122,7 @@ function get_config(; gemm_shape, operator, global_a_layout, global_c_layout, kw
             N = block_shape.N ÷ min(block_shape.N ÷ op_shape.N, 2),
             K = op_shape.K
         )        
-        warps_per_block_default = compute_warp_default.M * compute_warp_default.N
+        warps_per_block_default = min(block_shape.M ÷ op_shape.M, 4) * min(block_shape.N ÷ op_shape.N, 2)
         println(warps_per_block_default )
     end
 

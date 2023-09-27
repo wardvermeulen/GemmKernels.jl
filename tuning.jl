@@ -90,6 +90,8 @@ function main()
         #     return Inf
         # end
 
+        println("test")
+
         if block_shape.K < 8
             return Inf
         end
