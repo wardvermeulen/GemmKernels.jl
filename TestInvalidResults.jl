@@ -2,7 +2,7 @@ using CUDA, GemmKernels
 using Octavian
 
 function main()
-    M = K = N = 128
+    M = K = N = 1024
 
     A = CUDA.rand(Float32, M, K)
     B = CUDA.rand(Float32, K, N)
@@ -33,20 +33,25 @@ function main()
 
 
     # ! Set these variables
-    OPERATOR_M = 4
-    OPERATOR_N = 8
-    OPERATOR_K = 1
+    # OPERATOR_M = 4
+    # OPERATOR_N = 8
+    # OPERATOR_K = 1
 
     # or 8, 16, 4
-    BLOCK_M = 64
-    BLOCK_N = 64
-    BLOCK_K = 64
+    # ! New constraint: block size M or N cannot be equal to operator size M or N
+    # ? BLOCK_M * BLOCK_K >= 128
+    # ? BLOCK_N * BLOCK_K >= 128
+    # ? BLOCK_M >= 2 * OPERATOR_M
+    # ? BLOCK_N >= 2 * OPERATOR_N
+    BLOCK_M = 16
+    BLOCK_N = 32
+    BLOCK_K = 32
 
-    op_shape = (M=OPERATOR_M, N=OPERATOR_N, K=OPERATOR_K)
+    # op_shape = (M=OPERATOR_M, N=OPERATOR_N, K=OPERATOR_K)
     block_shape = (M=BLOCK_M, N=BLOCK_N, K=BLOCK_K)
 
     compute_type = promote_type(eltype(A), eltype(B))
-    operator = Operator.FPUOp{8, 8, 4, 8, 4, 1, compute_type, eltype(C)}
+    operator = Operator.FPUOp{2, 16, 1, 2, 16, 1, compute_type, eltype(C)}
 
     println("Operator: ", operator)
 

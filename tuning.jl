@@ -42,117 +42,76 @@ function main()
     attempts = 0
     benchmarks = 0
 
-    operator_larger_than_block = 0
-    operator_base_shape = 0
-    localarray_size_limits = 0
+    shmem_error = 0
+    config_error = 0
+    local_array_error = 0
 
-    ho = @hyperopt for i = 1000,
-                       OPERATOR_M = 2 .^ (1:4),
-                       OPERATOR_N = 2 .^ (1:4),
-                       OPERATOR_K = 2 .^ (1:4),
-                       BLOCK_M = 2 .^ (1:8),
-                       BLOCK_N = 2 .^ (1:8),
-                       BLOCK_K = 2 .^ (1:8)
-        op_shape = (M = OPERATOR_M, N = OPERATOR_N, K = OPERATOR_K)
+    ho = @hyperopt for i = 10000,
+                       OPERATOR_M = 2 .^ (0:5),
+                       OPERATOR_N = 2 .^ (0:5),
+                       OPERATOR_K = 2 .^ (0:5),
+                       OPERATOR_M_BASE = 2 .^ (0:5),
+                       BLOCK_M = 2 .^ (4:8),
+                       BLOCK_N = 2 .^ (4:8),
+                       BLOCK_K = 2 .^ (4:8)
         block_shape = (M = BLOCK_M, N = BLOCK_N, K = BLOCK_K)
         total += 1
 
-        # validate the operator shape
-        ## may not be larger than the block shape
-        if op_shape.M > block_shape.M ||
-           op_shape.N > block_shape.N ||
-           op_shape.K > block_shape.K
-           operator_larger_than_block += 1
-            return Inf
-        end
-        ## the FPU operator's base shape is 4x8x1. can we relax this?
-        if op_shape.M < 4 || op_shape.M % 4 != 0 ||
-           op_shape.N < 8 || op_shape.N % 8 != 0
-           operator_base_shape += 1
-            return Inf
-        end
-        ## LocalArray size limits (these are the ways FPUOp instantiates them)
-        if op_shape.M÷4 * op_shape.K >= 32 ||
-           op_shape.K * op_shape.N÷8 >= 32 ||
-           op_shape.M÷4 * op_shape.N÷8 >= 32
-           localarray_size_limits += 1
-            # in isolation, i.e. https://github.com/JuliaGPU/GemmKernels.jl/issues/99,
-            # a LocalArray of 32 elements is fine, but in the context of the kernel,
-            # it's too large. I don't know why.
-            return Inf
-        end
-
-
-        # # TODO: fix warps_per_block and no_warps
-        # if block_shape.M ÷ op_shape.M < 4 ||
-        #    block_shape.N ÷ op_shape.N < 2 ||
-        #    block_shape.K < 8
-        #     return Inf
-        # end
-
-        println("test")
-
-        if block_shape.K < 8
-            return Inf
-        end
-
+        OPERATOR_N_BASE = 32 ÷ OPERATOR_M_BASE
+        OPERATOR_K_BASE = 1
 
         # validate the block shape
         ## needs to exactly covers the inputs, so that we can use the unsafe layouts.
         if M % block_shape.M != 0 || N % block_shape.N != 0 || K % block_shape.K != 0
+            println("Block shape does not cover the inputs")
             return Inf
         end
+
         ## need to be 128-bit aligned so that we can perform vectorized loads
         # XXX: is this correct?
         if block_shape.M * sizeof(eltype(A)) % 16 != 0 ||
            block_shape.N * sizeof(eltype(B)) % 16 != 0 ||
            block_shape.K * sizeof(eltype(C)) % 16 != 0
+           println("Block shape is not 128-bit aligned")
             return Inf
         end
 
         compute_type = promote_type(eltype(A), eltype(B))
 
-        if OPERATOR_M * OPERATOR_N < 32
+        operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, OPERATOR_M_BASE, OPERATOR_N_BASE, OPERATOR_K_BASE, compute_type, eltype(C)}
+
+        conf = nothing
+        try
+            conf = GemmKernels.get_config(;
+                gemm_shape = (; M, N, K), block_shape, operator,
+
+                global_a_layout, global_b_layout, global_c_layout, global_d_layout,
+                shared_a_layout, shared_b_layout, shared_c_layout, shared_d_layout,
+
+                is_a_col_major = true,
+                is_b_col_major = true
+            )
+        catch err
+            # @warn sprint(Base.showerror, err)
+            # @info "$operator ($BLOCK_M, $BLOCK_N, $BLOCK_K)"
+            config_error += 1
             return Inf
         end
 
-        if OPERATOR_M * OPERATOR_N == 32
-            operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, OPERATOR_M, OPERATOR_N, 1, compute_type, eltype(C)}
-        elseif OPERATOR_M >= 4 && OPERATOR_N >= 8
-            operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, 4, 8, 1, compute_type, eltype(C)}
-        elseif OPERATOR_M > OPERATOR_N 
-            too_large = OPERATOR_M * OPERATOR_N ÷ 32
-
-            if too_large <= OPERATOR_N
-                operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, OPERATOR_M, OPERATOR_N ÷ too_large, 1, compute_type, eltype(C)}
-            else
-                return Inf
-            end
-        else
-            too_large = OPERATOR_M * OPERATOR_N ÷ 32
-
-            if too_large <= OPERATOR_M
-                operator = Operator.FPUOp{OPERATOR_M, OPERATOR_N, OPERATOR_K, OPERATOR_M ÷ too_large, OPERATOR_N, 1, compute_type, eltype(C)}
-            else
-                return Inf
-            end
+        # LocalAray size limit, in the FPUOp
+        if (OPERATOR_M ÷ OPERATOR_M_BASE) * (OPERATOR_K ÷ OPERATOR_K_BASE) >= 32 ||
+            (OPERATOR_N ÷ OPERATOR_N_BASE) * (OPERATOR_K ÷ OPERATOR_K_BASE) >= 32 || 
+            (OPERATOR_M ÷ OPERATOR_M_BASE) * (OPERATOR_N ÷ OPERATOR_N_BASE) >= 32
+            # println("LocalArray size limit")
+            local_array_error += 1
+            return Inf
         end
 
-        conf = GemmKernels.get_config(;
-            gemm_shape = (; M, N, K), block_shape, operator,
-
-            global_a_layout, global_b_layout, global_c_layout, global_d_layout,
-            shared_a_layout, shared_b_layout, shared_c_layout, shared_d_layout,
-
-            is_a_col_major = true,
-            is_b_col_major = true
-        )
-
-        ## another LocalArray size limit, these are in the kernel
+        # another LocalArray size limit, these are in the kernel
         num_fragments_m = conf.compute_warp.M ÷ conf.compute_op_shape.M
         num_fragments_n = conf.compute_warp.N ÷ conf.compute_op_shape.N
         if num_fragments_m * num_fragments_n >= 32
-            localarray_size_limits += 1
+            local_array_error += 1
             return Inf
         end
 
@@ -182,7 +141,8 @@ function main()
                 @error "Configuration failed: $conf"
                 rethrow()
             end
-            @info "Skipping configuration: $conf\n" * sprint(Base.showerror, err)
+            # @info "Skipping configuration: $conf\n" * sprint(Base.showerror, err)
+            shmem_error += 1
             # TODO: introduce GemmKernels.ConfigError, to differentiate from e.g.
                 #   compilation errors, which we want to report verbosely.
             Inf
@@ -193,10 +153,9 @@ function main()
     errors = attempts - benchmarks
     println("Out of $total configurations, $skips ($(round(100*skips/total; digits=1))%) were skipped, $errors ($(round(100*errors/total; digits=1))%) errored, and $benchmarks ($(round(100*benchmarks/total; digits=1))%) were actually tested.")
 
-    println(operator_larger_than_block) # 484
-    println(operator_base_shape) # 356
-    println(localarray_size_limits) # 60
-    # tot 900
+    println("ConfigErrors: ", config_error)
+    println("Shared memory errors: ", shmem_error)
+    println("LocalArray errors: ", local_array_error)
 
     ho
 end
