@@ -26,11 +26,10 @@ function main()
     benchmarks = 0
 
     valid_configs = find_valid_configs(A, B, C)
-    println("number of valid configs ", length(valid_configs))
+    # println("number of valid configs ", length(valid_configs))
 
-    ho = @hyperopt for i = 5, 
-                       j = Vector(1:length(valid_configs)),
-                       dummy = 1 # Hyperopt.jl cannot optimise over a single param
+    ho = @hyperopt for i = 1000, 
+        ((OPERATOR_M, OPERATOR_N, OPERATOR_K, OPERATOR_M_BASE, OPERATOR_N_BASE, OPERATOR_K_BASE, BLOCK_M, BLOCK_N, BLOCK_K), conf) in valid_configs
 
         total += 1
         conf = getindex(valid_configs, j)
@@ -41,7 +40,7 @@ function main()
             C .= 0
             GemmKernels.matmul(conf, A, B, C, C; kernel)
             if !(Array(C) ≈ C_h)
-                @warn "Configuration produced invalid result: $conf ($BLOCK_M, $BLOCK_N, $BLOCK_K)"
+                @warn "Configuration produced invalid result: $conf"
                 return Inf
             end
 
@@ -72,11 +71,11 @@ function main()
     errors = attempts - benchmarks
     println("Out of $total configurations, $skips ($(round(100*skips/total; digits=1))%) were skipped, $errors ($(round(100*errors/total; digits=1))%) errored, and $benchmarks ($(round(100*benchmarks/total; digits=1))%) were actually tested.")
 
-    ho, valid_configs
+    ho
 end
 
 function find_valid_configs(A, B, C)
-    valid_configs = []
+    valid_configs = Dict{NTuple{9, Int64}, Any}
 
     # pow2-sized, 128-bit aligned inputs, so we can use aligned layouts.
     # we don't have transposed inputs, so everything is column major.
@@ -96,13 +95,13 @@ function find_valid_configs(A, B, C)
     shared_c_layout = shared_d_layout = Layout.UnsafeAlignedColMajor{eltype(C)}
 
     M = K = N = 2048
-    for OPERATOR_M in 2 .^ (0:5),
-        OPERATOR_N in 2 .^ (0:5),
-        OPERATOR_K in 2 .^ (0:5),
-        OPERATOR_M_BASE in 2 .^ (4:5),
-        BLOCK_M in 2 .^ (5:5),
-        BLOCK_N in 2 .^ (5:5),
-        BLOCK_K in 2 .^ (5:5)
+    for OPERATOR_M = 2 .^ (4:5),
+                       OPERATOR_N = 2 .^ (4:5),
+                       OPERATOR_K = 2 .^ (4:5),
+                       OPERATOR_M_BASE = 2 .^ (4:5),
+                       BLOCK_M = 2 .^ (7:8),
+                       BLOCK_N = 2 .^ (7:8),
+                       BLOCK_K = 2 .^ (7:8)
 
         block_shape = (M = BLOCK_M, N = BLOCK_N, K = BLOCK_K)
 
@@ -159,7 +158,7 @@ function find_valid_configs(A, B, C)
             continue
         end
 
-        push!(valid_configs, conf)
+        merge!(valid_configs, Dict((OPERATOR_M, OPERATOR_N, OPERATOR_K, OPERATOR_M_BASE, OPERATOR_N_BASE, OPERATOR_K_BASE, BLOCK_M, BLOCK_N, BLOCK_K) => conf))
     end
 
     return valid_configs
